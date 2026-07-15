@@ -7,3 +7,4 @@ export * from './normalizer-schemas.js';
 export * from './declarative-normalizer.js';
 export * from './compiler.js';
 export * from './evaluation.js';
+export * from './consensus-compiler.js';

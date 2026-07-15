@@ -1,4 +1,11 @@
-import { chmod, copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  readFile,
+  readdir,
+  writeFile,
+} from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -30,7 +37,7 @@ async function assertReleaseMetadata() {
   }
 }
 
-function packageNameFromInput(input) {
+function packageRootFromInput(input) {
   const normalized = input.replaceAll('\\', '/');
   const marker = 'node_modules/';
   const markerIndex = normalized.lastIndexOf(marker);
@@ -40,10 +47,23 @@ function packageNameFromInput(input) {
 
   const packagePath = normalized.slice(markerIndex + marker.length);
   const parts = packagePath.split('/');
-  return parts[0]?.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
+  const packagePartCount = parts[0]?.startsWith('@') ? 2 : 1;
+  if (
+    parts.length < packagePartCount ||
+    parts.slice(0, packagePartCount).some((part) => part.length === 0)
+  ) {
+    return undefined;
+  }
+  const relativeRoot = normalized.slice(
+    0,
+    markerIndex +
+      marker.length +
+      parts.slice(0, packagePartCount).join('/').length,
+  );
+  return resolve(root, relativeRoot);
 }
 
-async function readLicense(packageRoot) {
+async function readLicense(packageRoot, packageJson) {
   const candidates = [
     'LICENSE',
     'LICENSE.md',
@@ -53,9 +73,14 @@ async function readLicense(packageRoot) {
     'LICENCE.txt',
   ];
 
+  let primary;
   for (const candidate of candidates) {
     try {
-      return await readFile(resolve(packageRoot, candidate), 'utf8');
+      primary = {
+        source: candidate,
+        text: await readFile(resolve(packageRoot, candidate), 'utf8'),
+      };
+      break;
     } catch (error) {
       if (error?.code !== 'ENOENT') {
         throw error;
@@ -63,23 +88,76 @@ async function readLicense(packageRoot) {
     }
   }
 
-  throw new Error(`Bundled package is missing a license file: ${packageRoot}`);
+  if (primary === undefined) {
+    if (packageJson.license !== 'Apache-2.0') {
+      throw new Error(
+        `Bundled package is missing its declared license file: ${packageRoot}`,
+      );
+    }
+    primary = {
+      source: 'SPDX Apache-2.0 standard text',
+      text: await readFile(resolve(root, 'LICENSE'), 'utf8'),
+    };
+  }
+
+  const nestedLicensePattern = /^licen[cs]e(?:\.(?:md|txt))?$/iu;
+  const nested = [];
+  for (const entry of await readdir(packageRoot, {
+    recursive: true,
+    withFileTypes: true,
+  })) {
+    if (!entry.isFile() || !nestedLicensePattern.test(entry.name)) continue;
+    const path = resolve(entry.parentPath, entry.name);
+    if (path === resolve(packageRoot, primary.source)) continue;
+    nested.push({
+      source: path.slice(packageRoot.length + 1).replaceAll('\\', '/'),
+      text: await readFile(path, 'utf8'),
+    });
+  }
+  nested.sort((left, right) =>
+    left.source < right.source ? -1 : left.source > right.source ? 1 : 0,
+  );
+
+  const seen = new Set();
+  return [primary, ...nested]
+    .filter(({ text }) => {
+      const normalized = text.trim();
+      if (seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    })
+    .map(({ source, text }) => `License source: ${source}\n\n${text.trim()}`)
+    .join('\n\n');
 }
 
 async function writePluginNotices(metafile) {
-  const packageNames = [
+  const packageRoots = [
     ...new Set(
       Object.keys(metafile.inputs)
-        .map(packageNameFromInput)
-        .filter((name) => name !== undefined),
+        .map(packageRootFromInput)
+        .filter((packageRoot) => packageRoot !== undefined),
     ),
-  ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  ];
 
-  if (packageNames.length === 0) {
+  if (packageRoots.length === 0) {
     throw new Error(
       'Plugin bundle unexpectedly contains no third-party packages',
     );
   }
+
+  const packages = await Promise.all(
+    packageRoots.map(async (packageRoot) => ({
+      packageRoot,
+      packageJson: JSON.parse(
+        await readFile(resolve(packageRoot, 'package.json'), 'utf8'),
+      ),
+    })),
+  );
+  packages.sort((left, right) => {
+    const leftKey = `${left.packageJson.name}\0${left.packageJson.version}\0${left.packageRoot}`;
+    const rightKey = `${right.packageJson.name}\0${right.packageJson.version}\0${right.packageRoot}`;
+    return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+  });
 
   const notices = [
     'THIRD-PARTY NOTICES',
@@ -88,12 +166,8 @@ async function writePluginNotices(metafile) {
     'remains subject to its own license, reproduced below.',
   ];
 
-  for (const packageName of packageNames) {
-    const packageRoot = resolve(root, 'node_modules', packageName);
-    const packageJson = JSON.parse(
-      await readFile(resolve(packageRoot, 'package.json'), 'utf8'),
-    );
-    const licenseText = (await readLicense(packageRoot)).trim();
+  for (const { packageRoot, packageJson } of packages) {
+    const licenseText = await readLicense(packageRoot, packageJson);
 
     notices.push(
       '',
