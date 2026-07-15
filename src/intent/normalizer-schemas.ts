@@ -301,7 +301,6 @@ function validateEvaluationFixture(
   }
 
   const pairs = new Set<string>();
-  const distinctFamilyPairs = new Set<string>();
   for (const comparison of comparisons) {
     if (comparison.leftCaseId === comparison.rightCaseId) {
       throw malformed('Intent evaluation comparison cannot reference itself');
@@ -336,17 +335,6 @@ function validateEvaluationFixture(
       (comparison.relation === 'distinct' && left.familyId === right.familyId)
     ) {
       throw malformed('Intent evaluation comparison contradicts family labels');
-    }
-    if (comparison.relation === 'distinct') {
-      const familyPair = [left.familyId, right.familyId]
-        .sort(compareCodeUnits)
-        .join('\0');
-      if (distinctFamilyPairs.has(familyPair)) {
-        throw malformed(
-          'Intent evaluation fixture repeats a distinct family pair',
-        );
-      }
-      distinctFamilyPairs.add(familyPair);
     }
   }
 }

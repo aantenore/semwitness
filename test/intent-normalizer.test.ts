@@ -632,7 +632,7 @@ describe('intent normalizer evaluation fixture', () => {
     ).toThrow(/contradicts ground truth/u);
   });
 
-  it('rejects repeated distinct comparisons between the same families', () => {
+  it('permits distinct case pairs between the same families', () => {
     const records = [
       caseRecord({
         id: 'explain-a',
@@ -671,9 +671,11 @@ describe('intent normalizer evaluation fixture', () => {
         relation: 'distinct',
       }),
     ];
-    expect(() => parseIntentEvaluationJsonl(jsonl(records))).toThrow(
-      /repeats a distinct family pair/u,
-    );
+    const fixture = parseIntentEvaluationJsonl(jsonl(records));
+    expect(fixture.comparisons).toHaveLength(2);
+    expect(
+      fixture.comparisons.every((item) => item.relation === 'distinct'),
+    ).toBe(true);
   });
 });
 
