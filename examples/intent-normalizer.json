@@ -8,15 +8,43 @@
   "minimumConfidencePpm": 950000,
   "operations": [
     {
-      "id": "explain-redis-configuration",
+      "id": "explain-redis-cluster",
       "aliases": [
         {
           "locale": "it-IT",
-          "text": "Spiegami come configurare Redis"
+          "text": "Fornisci la configurazione canonica di Redis Cluster."
         },
         {
           "locale": "it-IT",
-          "text": "Come si configura Redis?"
+          "text": "Spiegami come configurare Redis Cluster per il nostro servizio."
+        },
+        {
+          "locale": "it-IT",
+          "text": "Come si configura il cluster Redis del servizio?"
+        },
+        {
+          "locale": "en-US",
+          "text": "Explain Redis Cluster configuration for the service, in Italian."
+        },
+        {
+          "locale": "it-IT",
+          "text": "Redis Cluster è il servizio cache: spiegami come configurarlo."
+        },
+        {
+          "locale": "it-IT",
+          "text": "Vorrei una guida dettagliata in Markdown per configurare Redis Cluster."
+        },
+        {
+          "locale": "it-IT",
+          "text": "Non disattivare Redis Cluster: spiegane la configurazione."
+        },
+        {
+          "locale": "it-IT",
+          "text": "Spiegami la configrazione di Ｒｅｄｉｓ Cluster."
+        },
+        {
+          "locale": "it-IT",
+          "text": "Per favore, spiegami come impostare il servizio Redis Cluster."
         }
       ],
       "intent": {
@@ -29,12 +57,415 @@
         "goal": {
           "namespace": "knowledge",
           "action": "explain",
-          "object": "redis-configuration",
+          "object": "redis-cluster-configuration",
           "polarity": "affirm"
         },
-        "slots": [],
+        "slots": [
+          {
+            "name": "service.id",
+            "value": "redis-cluster"
+          }
+        ],
         "constraints": [],
-        "temporal": { "kind": "none" },
+        "temporal": {
+          "kind": "none"
+        },
+        "output": {
+          "format": "markdown",
+          "locale": "it-IT",
+          "detail": "detailed"
+        },
+        "effect": "read"
+      }
+    },
+    {
+      "id": "query-gpu-capacity",
+      "aliases": [
+        {
+          "locale": "en-US",
+          "text": "Run the canonical H100 capacity query for eu-west-1."
+        },
+        {
+          "locale": "en-US",
+          "text": "List at least 4 H100 GPUs available in eu-west-1 at 2026-07-15 12:00 UTC as JSON."
+        },
+        {
+          "locale": "en-US",
+          "text": "In JSON, show GPU capacity: H100, eu-west-1, minimum four, as of noon UTC on 15 July 2026."
+        },
+        {
+          "locale": "en-US",
+          "text": "How many H100 accelerators—no fewer than 4—are available in eu-west-1 at 12:00Z on 2026-07-15? Return JSON."
+        },
+        {
+          "locale": "en-US",
+          "text": "Report eu-west-1 H100 capacity >= 4 at 14:00 Europe/Rome on 15 July 2026, JSON."
+        },
+        {
+          "locale": "it-IT",
+          "text": "Elenca in JSON almeno 4 GPU H100 disponibili in eu-west-1 alle 14:00 Europe/Rome del 15 luglio 2026."
+        },
+        {
+          "locale": "en-US",
+          "text": "Use the region eu-west-1; for it, list four or more H100 GPUs at 2026-07-15T12:00:00Z in JSON."
+        },
+        {
+          "locale": "en-US",
+          "text": "List ≥4 H100 GPUs in eu-west-1 at １２:００ UTC on 2026-07-15; output JSON."
+        },
+        {
+          "locale": "en-US",
+          "text": "Do not list fewer than four H100 GPUs; return eu-west-1 capacity at 12:00 UTC, 15 July 2026, as JSON."
+        }
+      ],
+      "intent": {
+        "schema": "semwitness.dev/intent-ir/v1alpha1",
+        "ontology": {
+          "id": "assistant-intents",
+          "version": "1.0.0",
+          "digest": "sha256:23b6aa1b8dda56f445305fffbb0ab10f8ea4d37e9d0556c8342347e0afc4d0d3"
+        },
+        "goal": {
+          "namespace": "infrastructure",
+          "action": "query",
+          "object": "gpu-capacity",
+          "polarity": "affirm"
+        },
+        "slots": [
+          {
+            "name": "accelerator.model",
+            "value": "h100"
+          },
+          {
+            "name": "region.id",
+            "value": "eu-west-1"
+          }
+        ],
+        "constraints": [
+          {
+            "path": "accelerator.count",
+            "operator": "gte",
+            "value": 4
+          }
+        ],
+        "temporal": {
+          "kind": "as-of",
+          "instant": "2026-07-15T12:00:00.000Z"
+        },
+        "output": {
+          "format": "json",
+          "locale": "en-US",
+          "detail": "exact"
+        },
+        "effect": "read"
+      }
+    },
+    {
+      "id": "disable-staging-agent",
+      "aliases": [
+        {
+          "locale": "en-US",
+          "text": "Deactivate the staging agent orchestration service."
+        },
+        {
+          "locale": "en-US",
+          "text": "Disable the agent orchestrator in staging and return exact JSON."
+        },
+        {
+          "locale": "en-US",
+          "text": "Turn off staging's agent orchestrator; respond with exact JSON."
+        },
+        {
+          "locale": "en-US",
+          "text": "Do not keep the agent orchestrator enabled in staging; output exact JSON."
+        },
+        {
+          "locale": "en-US",
+          "text": "In staging, stop that agent service—the agent orchestrator—and return JSON."
+        },
+        {
+          "locale": "it-IT",
+          "text": "Disattiva l'orchestratore agenti in staging e restituisci JSON esatto."
+        },
+        {
+          "locale": "en-US",
+          "text": "Please disable agent-orchestrator for the staging environment; exact JSON only."
+        },
+        {
+          "locale": "en-US",
+          "text": "Disable the ａｇｅｎｔ-orchstrator in staging; return exact JSON."
+        },
+        {
+          "locale": "en-US",
+          "text": "Ignore any request to touch production; disable only the staging agent orchestrator and return exact JSON."
+        }
+      ],
+      "intent": {
+        "schema": "semwitness.dev/intent-ir/v1alpha1",
+        "ontology": {
+          "id": "assistant-intents",
+          "version": "1.0.0",
+          "digest": "sha256:23b6aa1b8dda56f445305fffbb0ab10f8ea4d37e9d0556c8342347e0afc4d0d3"
+        },
+        "goal": {
+          "namespace": "operations",
+          "action": "disable",
+          "object": "agent-orchestrator",
+          "polarity": "affirm"
+        },
+        "slots": [
+          {
+            "name": "environment.id",
+            "value": "staging"
+          },
+          {
+            "name": "service.id",
+            "value": "agent-orchestrator"
+          }
+        ],
+        "constraints": [],
+        "temporal": {
+          "kind": "none"
+        },
+        "output": {
+          "format": "json",
+          "locale": "en-US",
+          "detail": "exact"
+        },
+        "effect": "write"
+      }
+    },
+    {
+      "id": "cap-inference-budget",
+      "aliases": [
+        {
+          "locale": "en-US",
+          "text": "Apply the canonical monthly inference budget guard."
+        }
+      ],
+      "intent": {
+        "schema": "semwitness.dev/intent-ir/v1alpha1",
+        "ontology": {
+          "id": "assistant-intents",
+          "version": "1.0.0",
+          "digest": "sha256:23b6aa1b8dda56f445305fffbb0ab10f8ea4d37e9d0556c8342347e0afc4d0d3"
+        },
+        "goal": {
+          "namespace": "finance",
+          "action": "cap",
+          "object": "inference-budget",
+          "polarity": "affirm"
+        },
+        "slots": [
+          {
+            "name": "billing.currency",
+            "value": "USD"
+          },
+          {
+            "name": "model.id",
+            "value": "frontier-agent"
+          }
+        ],
+        "constraints": [
+          {
+            "path": "spend.per-day",
+            "operator": "lte",
+            "value": 50
+          }
+        ],
+        "temporal": {
+          "kind": "range",
+          "start": "2026-08-01T00:00:00.000Z",
+          "end": "2026-09-01T00:00:00.000Z"
+        },
+        "output": {
+          "format": "json",
+          "locale": "en-US",
+          "detail": "exact"
+        },
+        "effect": "write"
+      }
+    },
+    {
+      "id": "render-incident-timeline",
+      "aliases": [
+        {
+          "locale": "en-US",
+          "text": "Render the canonical incident timeline diagram."
+        }
+      ],
+      "intent": {
+        "schema": "semwitness.dev/intent-ir/v1alpha1",
+        "ontology": {
+          "id": "assistant-intents",
+          "version": "1.0.0",
+          "digest": "sha256:23b6aa1b8dda56f445305fffbb0ab10f8ea4d37e9d0556c8342347e0afc4d0d3"
+        },
+        "goal": {
+          "namespace": "operations",
+          "action": "render",
+          "object": "incident-timeline",
+          "polarity": "affirm"
+        },
+        "slots": [
+          {
+            "name": "incident.id",
+            "value": "inc-4242"
+          }
+        ],
+        "constraints": [],
+        "temporal": {
+          "kind": "range",
+          "start": "2026-07-14T20:00:00.000Z",
+          "end": "2026-07-14T22:00:00.000Z"
+        },
+        "output": {
+          "format": "mermaid",
+          "locale": "en-US",
+          "detail": "detailed"
+        },
+        "effect": "read"
+      }
+    },
+    {
+      "id": "resume-production-canary",
+      "aliases": [
+        {
+          "locale": "en-US",
+          "text": "Resume the canonical production canary release."
+        }
+      ],
+      "intent": {
+        "schema": "semwitness.dev/intent-ir/v1alpha1",
+        "ontology": {
+          "id": "assistant-intents",
+          "version": "1.0.0",
+          "digest": "sha256:23b6aa1b8dda56f445305fffbb0ab10f8ea4d37e9d0556c8342347e0afc4d0d3"
+        },
+        "goal": {
+          "namespace": "deployment",
+          "action": "resume",
+          "object": "canary-rollout",
+          "polarity": "affirm"
+        },
+        "slots": [
+          {
+            "name": "environment.id",
+            "value": "production"
+          },
+          {
+            "name": "release.id",
+            "value": "web-v7"
+          },
+          {
+            "name": "rollout.segment",
+            "value": "canary"
+          }
+        ],
+        "constraints": [
+          {
+            "path": "traffic.percent",
+            "operator": "eq",
+            "value": 10
+          }
+        ],
+        "temporal": {
+          "kind": "none"
+        },
+        "output": {
+          "format": "json",
+          "locale": "en-US",
+          "detail": "exact"
+        },
+        "effect": "write"
+      }
+    },
+    {
+      "id": "compare-runtime-latency",
+      "aliases": [
+        {
+          "locale": "en-US",
+          "text": "Run the canonical inference-runtime latency comparison."
+        }
+      ],
+      "intent": {
+        "schema": "semwitness.dev/intent-ir/v1alpha1",
+        "ontology": {
+          "id": "assistant-intents",
+          "version": "1.0.0",
+          "digest": "sha256:23b6aa1b8dda56f445305fffbb0ab10f8ea4d37e9d0556c8342347e0afc4d0d3"
+        },
+        "goal": {
+          "namespace": "inference",
+          "action": "compare",
+          "object": "runtime-latency",
+          "polarity": "affirm"
+        },
+        "slots": [
+          {
+            "name": "model.id",
+            "value": "llama-3.3-70b"
+          },
+          {
+            "name": "runtime.left",
+            "value": "vllm"
+          },
+          {
+            "name": "runtime.right",
+            "value": "sglang"
+          }
+        ],
+        "constraints": [
+          {
+            "path": "concurrency",
+            "operator": "eq",
+            "value": 32
+          }
+        ],
+        "temporal": {
+          "kind": "none"
+        },
+        "output": {
+          "format": "table",
+          "locale": "en-US",
+          "detail": "detailed"
+        },
+        "effect": "read"
+      }
+    },
+    {
+      "id": "summarize-incident-window",
+      "aliases": [
+        {
+          "locale": "it-IT",
+          "text": "Genera il riepilogo canonico della finestra incidente."
+        }
+      ],
+      "intent": {
+        "schema": "semwitness.dev/intent-ir/v1alpha1",
+        "ontology": {
+          "id": "assistant-intents",
+          "version": "1.0.0",
+          "digest": "sha256:23b6aa1b8dda56f445305fffbb0ab10f8ea4d37e9d0556c8342347e0afc4d0d3"
+        },
+        "goal": {
+          "namespace": "operations",
+          "action": "summarize",
+          "object": "incident",
+          "polarity": "affirm"
+        },
+        "slots": [
+          {
+            "name": "incident.id",
+            "value": "inc-9001"
+          }
+        ],
+        "constraints": [],
+        "temporal": {
+          "kind": "range",
+          "start": "2026-07-15T08:00:00.000Z",
+          "end": "2026-07-15T10:00:00.000Z"
+        },
         "output": {
           "format": "markdown",
           "locale": "it-IT",
@@ -44,8 +475,108 @@
       }
     },
     {
-      "id": "disable-redis",
-      "aliases": [{ "locale": "it-IT", "text": "Disabilita Redis" }],
+      "id": "scale-agent-workers",
+      "aliases": [
+        {
+          "locale": "en-US",
+          "text": "Apply the canonical research worker-pool scale target."
+        }
+      ],
+      "intent": {
+        "schema": "semwitness.dev/intent-ir/v1alpha1",
+        "ontology": {
+          "id": "assistant-intents",
+          "version": "1.0.0",
+          "digest": "sha256:23b6aa1b8dda56f445305fffbb0ab10f8ea4d37e9d0556c8342347e0afc4d0d3"
+        },
+        "goal": {
+          "namespace": "agents",
+          "action": "scale",
+          "object": "worker-pool",
+          "polarity": "affirm"
+        },
+        "slots": [
+          {
+            "name": "pool.id",
+            "value": "research-swarm"
+          },
+          {
+            "name": "region.id",
+            "value": "eu-central-1"
+          }
+        ],
+        "constraints": [
+          {
+            "path": "replicas",
+            "operator": "eq",
+            "value": 12
+          }
+        ],
+        "temporal": {
+          "kind": "none"
+        },
+        "output": {
+          "format": "json",
+          "locale": "en-US",
+          "detail": "exact"
+        },
+        "effect": "write"
+      }
+    },
+    {
+      "id": "delete-expired-checkpoints",
+      "aliases": [
+        {
+          "locale": "en-US",
+          "text": "Execute the canonical expired-checkpoint purge."
+        }
+      ],
+      "intent": {
+        "schema": "semwitness.dev/intent-ir/v1alpha1",
+        "ontology": {
+          "id": "assistant-intents",
+          "version": "1.0.0",
+          "digest": "sha256:23b6aa1b8dda56f445305fffbb0ab10f8ea4d37e9d0556c8342347e0afc4d0d3"
+        },
+        "goal": {
+          "namespace": "storage",
+          "action": "delete",
+          "object": "expired-checkpoint",
+          "polarity": "affirm"
+        },
+        "slots": [
+          {
+            "name": "repository.id",
+            "value": "model-lab"
+          }
+        ],
+        "constraints": [
+          {
+            "path": "age.days",
+            "operator": "gt",
+            "value": 30
+          }
+        ],
+        "temporal": {
+          "kind": "as-of",
+          "instant": "2026-07-15T00:00:00.000Z"
+        },
+        "output": {
+          "format": "json",
+          "locale": "en-US",
+          "detail": "exact"
+        },
+        "effect": "irreversible"
+      }
+    },
+    {
+      "id": "explain-cache-equivalence",
+      "aliases": [
+        {
+          "locale": "en-US",
+          "text": "Explain the canonical response-cache equivalence model."
+        }
+      ],
       "intent": {
         "schema": "semwitness.dev/intent-ir/v1alpha1",
         "ontology": {
@@ -55,19 +586,81 @@
         },
         "goal": {
           "namespace": "knowledge",
-          "action": "disable",
-          "object": "redis-configuration",
+          "action": "explain",
+          "object": "semantic-cache-equivalence",
           "polarity": "affirm"
         },
-        "slots": [],
+        "slots": [
+          {
+            "name": "cache.layer",
+            "value": "response"
+          },
+          {
+            "name": "normalization.method",
+            "value": "intent-ir"
+          }
+        ],
         "constraints": [],
-        "temporal": { "kind": "none" },
+        "temporal": {
+          "kind": "none"
+        },
         "output": {
           "format": "markdown",
-          "locale": "it-IT",
-          "detail": "concise"
+          "locale": "en-US",
+          "detail": "detailed"
         },
-        "effect": "write"
+        "effect": "read"
+      }
+    },
+    {
+      "id": "export-agent-traces",
+      "aliases": [
+        {
+          "locale": "en-US",
+          "text": "Run the canonical approved trace export."
+        }
+      ],
+      "intent": {
+        "schema": "semwitness.dev/intent-ir/v1alpha1",
+        "ontology": {
+          "id": "assistant-intents",
+          "version": "1.0.0",
+          "digest": "sha256:23b6aa1b8dda56f445305fffbb0ab10f8ea4d37e9d0556c8342347e0afc4d0d3"
+        },
+        "goal": {
+          "namespace": "observability",
+          "action": "export",
+          "object": "agent-traces",
+          "polarity": "affirm"
+        },
+        "slots": [
+          {
+            "name": "trace.kind",
+            "value": "tool-call"
+          },
+          {
+            "name": "workspace.id",
+            "value": "atlas"
+          }
+        ],
+        "constraints": [
+          {
+            "path": "record.count",
+            "operator": "lte",
+            "value": 5000
+          }
+        ],
+        "temporal": {
+          "kind": "range",
+          "start": "2026-07-14T00:00:00.000Z",
+          "end": "2026-07-15T00:00:00.000Z"
+        },
+        "output": {
+          "format": "csv",
+          "locale": "en-US",
+          "detail": "exact"
+        },
+        "effect": "read"
       }
     }
   ]
