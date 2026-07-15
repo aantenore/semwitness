@@ -1,7 +1,7 @@
 {
   "name": "semwitness",
-  "version": "0.1.1",
-  "description": "Proof-carrying semantic compression and Compression CI for AI agents.",
+  "version": "0.2.0-alpha.1",
+  "description": "Shadow evaluation for proof-carrying semantic compression and verified intent-cache admission.",
   "type": "module",
   "license": "Apache-2.0",
   "author": "Antonio Antenore <ant_ant95@hotmail.it>",
@@ -16,12 +16,16 @@
   "keywords": [
     "agentic-ai",
     "context-compression",
+    "intent-normalization",
     "llm-evaluation",
     "prompt-compression",
+    "semantic-cache",
     "semantic-codec"
   ],
   "files": [
     "dist",
+    "docs",
+    "examples/intent-witness.mjs",
     "README.md",
     "LICENSE"
   ],
@@ -29,6 +33,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./intent": {
+      "types": "./dist/intent/index.d.ts",
+      "import": "./dist/intent/index.js"
     }
   },
   "bin": {
@@ -43,6 +51,7 @@
     "build:plugin": "node scripts/build-plugin.mjs",
     "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test",
     "dev": "tsx src/entrypoints/cli.ts",
+    "example:intent": "node examples/intent-witness.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "oxlint --deny-warnings src test scripts",
