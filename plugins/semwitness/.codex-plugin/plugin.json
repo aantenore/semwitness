@@ -1,7 +1,7 @@
 {
   "name": "semwitness",
-  "version": "0.2.0-alpha.1",
-  "description": "Proof-carrying semantic compression for AI-agent context, operated explicitly in shadow mode.",
+  "version": "0.3.0-alpha.1",
+  "description": "Proof-carrying shadow evaluation for semantic compression and typed intent normalization.",
   "author": {
     "name": "Antonio Antenore",
     "email": "50747458+aantenore@users.noreply.github.com",
@@ -13,7 +13,9 @@
   "keywords": [
     "agentic-ai",
     "context-compression",
+    "intent-normalization",
     "llm",
+    "semantic-cache",
     "semantic-codec",
     "token-optimization",
     "verification"
@@ -22,7 +24,7 @@
   "interface": {
     "displayName": "SemWitness",
     "shortDescription": "Measure and verify semantic compression before using it.",
-    "longDescription": "SemWitness analyzes context, simulates deterministic compression, verifies proof bundles, and measures net token savings without claiming transparent prompt or response interception.",
+    "longDescription": "SemWitness analyzes context, simulates deterministic compression, verifies proof bundles, evaluates typed intent normalizers, and measures evidence without claiming transparent interception or cache authorization.",
     "developerName": "Antonio Antenore",
     "category": "Developer Tools",
     "capabilities": ["Interactive", "Read", "Write"],
@@ -30,7 +32,8 @@
     "defaultPrompt": [
       "Analyze this context for safe token savings with SemWitness.",
       "Simulate compression and verify the resulting proof bundle.",
-      "Replay this fixture and compare its measured token cost."
+      "Replay this fixture and compare its measured token cost.",
+      "Evaluate this intent normalizer offline in shadow mode."
     ],
     "brandColor": "#0F766E"
   }

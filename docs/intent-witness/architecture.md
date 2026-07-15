@@ -7,10 +7,11 @@ _Shadow MVP design baseline — 2026-07-15_
 IntentWitness asks whether previously observed work has the _same canonical
 intent and the same answer-affecting authority and state_. In the first
 mechanical increment, the caller supplies the proposed typed Intent IR and its
-normalization evidence. The core validates and canonicalizes it; natural-
-language compilation and entity resolution are target adapters, not implemented
-MVP claims. Different wording can eventually converge on one cache identity,
-but semantic similarity alone can never authorize reuse.
+normalization evidence. The core validates and canonicalizes it. Normalizer Lab
+now adds a deliberately narrow exact-alias compiler and an authoritative
+operation registry; general natural-language compilation and entity resolution
+remain target adapters, not implemented claims. Different wording can converge
+on one cache identity, but semantic similarity alone can never authorize reuse.
 
 The first implementation remains inside SemWitness as an isolated bounded
 context. It reuses composition, evidence, and replay conventions, but it is not
@@ -39,8 +40,9 @@ provider-observed usage remains authoritative.
 
 ```mermaid
 flowchart LR
-    A["Request + authoritative host context"] -. "future adapter" .-> C["Compiler and resolvers"]
-    C -. "proposes" .-> D["Caller-supplied Intent IR + evidence"]
+    A["Request + authoritative host context"] --> C["Candidate compiler"]
+    C -. "operation ID" .-> R["Authoritative operation registry"]
+    R --> D["Caller-supplied or registry-owned Intent IR + evidence"]
     D --> B["Boundary validation"]
     B --> E["Strict Intent IR validation"]
     E --> F["Canonical IR bytes + digest"]
@@ -54,10 +56,11 @@ flowchart LR
     J -. "shadow comparison only" .-> M
 ```
 
-The first dotted edge is future work; the second dotted edge is observational.
-The implemented increment starts at the caller-supplied IR boundary. The shadow
-core never returns a cache value or changes tool selection, execution, provider
-input, or user-visible output; every decision sets `applied: false`.
+The built-in compiler implements only explicitly configured exact aliases; the
+general compiler/resolver path remains future work. The final dotted edge is
+observational. The shadow core never returns a cache value or changes tool
+selection, execution, provider input, or user-visible output; every decision
+sets `applied: false`.
 
 ## Bounded contexts and ports
 
@@ -76,14 +79,16 @@ input, or user-visible output; every decision sets `applied: false`.
 - **Tier binding:** domain-separated `plan`, `observation`, and `response`
   records.
 
-### Target replaceable ports
+### Replaceable ports
 
-These are the next architecture boundary, not first-increment implementation
-claims. The current core accepts the already-produced Intent IR and digests.
+Normalizer Lab implements the candidate compiler and operation-registry
+boundaries with a deterministic exact-alias adapter. The remaining ports are
+future host boundaries. The original API continues to accept already-produced
+Intent IR and digests.
 
 | Port                | Responsibility                                               | Fail-closed behavior                                                     |
 | ------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| `IntentCompiler`    | Produce a schema-shaped candidate from text and host context | Bypass on timeout, malformed output, unsupported operation, or ambiguity |
+| `IntentCompiler`    | Propose an operation from text and host context              | Bypass on timeout, malformed output, unsupported operation, or ambiguity |
 | `OperationRegistry` | Resolve namespaced operations and their slot schemas         | Bypass unknown or version-skewed operations                              |
 | `EntityResolver`    | Resolve aliases to authoritative stable IDs                  | Bypass unresolved, conflicting, or unauthorized entities                 |
 | `TemporalResolver`  | Resolve relative time against an injected clock and timezone | Bypass absent reference time, timezone ambiguity, or invalid range       |
@@ -153,9 +158,10 @@ The example is not the JSON Schema itself. The implementation schema must:
   implementation-dependent numeric coercion;
 - reject unknown fields and documents over configured bounds.
 
-The first increment does not insert semantic defaults or resolve aliases. The
-caller-provided normalizer and ontology bindings identify who proposed the IR;
-they do not grant cache authority.
+The core does not insert semantic defaults. Normalizer Lab can resolve only
+explicitly configured exact aliases to registry-owned frames; it does not infer
+entities, units, dates, coreference, or missing values. Normalizer and ontology
+bindings identify who proposed the IR; they do not grant cache authority.
 
 ## Canonicalization and equality
 
@@ -172,9 +178,10 @@ also recomputed before any eligible shadow decision.
 
 ## Candidate generation is not admission
 
-The first increment accepts optional `embedding` or `similarity` evidence from
-the caller and records it as `authoritative: false`; it does not run a vector
-index. A future candidate adapter may use exact indexes, alias registries,
+The core accepts optional `embedding` or `similarity` evidence from the caller
+and records it as `authoritative: false`; it does not run a vector index.
+Normalizer Lab's exact-alias adapter emits no such evidence. A future candidate
+adapter may use exact indexes, alias registries,
 embeddings, vector search, reranking, or a model to propose:
 
 - likely operation schemas before compilation;

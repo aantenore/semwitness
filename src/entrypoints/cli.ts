@@ -28,6 +28,13 @@ import {
   replayCases,
 } from '../eval/replay.js';
 import {
+  DeclarativeIntentNormalizer,
+  IntentWitnessError,
+  evaluateIntentNormalizer,
+  parseIntentEvaluationJsonl,
+  type IntentEvaluationCase,
+} from '../intent/index.js';
+import {
   createSimulationBundle,
   parseSimulationBundle,
   serializeSegmentMetadata,
@@ -45,8 +52,9 @@ import {
   writeNewPrivateFile,
 } from './io.js';
 
-const VERSION = '0.2.0-alpha.1';
+const VERSION = '0.3.0-alpha.1';
 const ERROR_SCHEMA = 'semwitness.dev/cli-error/v1alpha1';
+const MAX_INTENT_NORMALIZER_BYTES = 4 * 1024 * 1024;
 
 interface InputOptions {
   readonly input: string;
@@ -220,6 +228,61 @@ export async function runCli(
       },
     );
 
+  const intent = program
+    .command('intent')
+    .description('Evaluate typed intent normalization in offline shadow mode.');
+
+  intent
+    .command('evaluate')
+    .description(
+      'Evaluate a declarative normalizer against strict JSONL ground truth.',
+    )
+    .requiredOption('--fixture <file>', 'Strict intent evaluation JSONL file')
+    .requiredOption(
+      '--normalizer <file>',
+      'Strict declarative normalizer JSON file',
+    )
+    .option(
+      '--split <split>',
+      'conformance, development, held-out, or all',
+      parseIntentSplit,
+      'conformance',
+    )
+    .option('--runs <count>', 'Repeatability attempts per case', parseRuns, 2)
+    .option('--json', 'Emit stable JSON (default)')
+    .action(
+      async (options: {
+        fixture: string;
+        normalizer: string;
+        split: IntentEvaluationCase['split'] | 'all';
+        runs: number;
+      }) => {
+        const normalizerSource = decodeUtf8(
+          await readBoundedRegularFile(
+            options.normalizer,
+            MAX_INTENT_NORMALIZER_BYTES,
+          ),
+          'Intent normalizer must be UTF-8',
+        );
+        const fixtureSource = decodeUtf8(
+          await readBoundedRegularFile(options.fixture, MAX_FIXTURE_BYTES),
+          'Intent evaluation fixture must be UTF-8',
+        );
+        const normalizer = new DeclarativeIntentNormalizer(normalizerSource);
+        const report = await evaluateIntentNormalizer({
+          compiler: normalizer,
+          registry: normalizer,
+          fixture: parseIntentEvaluationJsonl(fixtureSource),
+          split: options.split,
+          attempts: options.runs,
+        });
+        writeJson(report);
+        if (!report.gate.passed) {
+          verdictExitCode = Math.max(verdictExitCode, 2);
+        }
+      },
+    );
+
   program
     .command('stats')
     .description('Report content-free CAS object counts and bytes.')
@@ -346,13 +409,37 @@ function parseTrust(value: string): TrustLevel {
   return value;
 }
 
+function parseIntentSplit(
+  value: string,
+): IntentEvaluationCase['split'] | 'all' {
+  if (
+    value !== 'conformance' &&
+    value !== 'development' &&
+    value !== 'held-out' &&
+    value !== 'all'
+  ) {
+    throw new InvalidArgumentError('Unsupported intent evaluation split');
+  }
+  return value;
+}
+
+function parseRuns(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 2 || parsed > 20) {
+    throw new InvalidArgumentError('Runs must be an integer between 2 and 20');
+  }
+  return parsed;
+}
+
 function writeJson(value: unknown): void {
   process.stdout.write(`${canonicalJson(toJsonValue(value))}\n`);
 }
 
 function writeError(error: unknown): void {
   const reason =
-    error instanceof SemWitnessError ? error.code : 'MALFORMED_ENVELOPE';
+    error instanceof SemWitnessError || error instanceof IntentWitnessError
+      ? error.code
+      : 'MALFORMED_ENVELOPE';
   process.stderr.write(
     `${canonicalJson(
       toJsonValue({

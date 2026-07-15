@@ -2,7 +2,7 @@
 
 - Date: 2026-07-15
 - Parent project: SemWitness
-- Status: proposed, shadow-only
+- Status: implemented alpha, shadow-only
 - Schema IDs: `semwitness.dev/intent-ir/v1alpha1`,
   `semwitness.dev/normalization-witness/v1alpha1`, and
   `semwitness.dev/cache-hit-witness/v1alpha1`
@@ -83,8 +83,9 @@ Must:
 
 Should, after the mechanical increment:
 
-- Add deterministic natural-language compilers first and optional LLM compilers
-  behind the same schema and evidence contract.
+- Expand the implemented deterministic exact-alias compiler into versioned,
+  domain-specific resolvers before adding optional LLM compilers behind the
+  same schema and evidence contract.
 - Keep compiler, entity resolver, embedding index, authorizer, freshness
   resolver, policy engine, cache store, clock, and telemetry behind replaceable
   ports selected from allowlisted registries.
@@ -141,6 +142,11 @@ promotion of `observation` or `response`.
 | IW13 | Privacy                   | Reports and default logs contain no request, response, tool result, secret, tenant name, or user identifier                                                                               | Snapshot tests and source scans                    |
 | IW14 | False-hit bound           | The one-sided 95% upper confidence bound is at most `0.001` for eligible plan/observation would-hits and at most `0.0001` for response would-hits, with zero observed response false hits | Independent held-out evaluation                    |
 | IW15 | Net value                 | Savings and latency estimates include compiler, embedding, lookup, verifier, miss, shadow comparison, invalidation, and recovery costs                                                    | Provider-observed workload report                  |
+| IW16 | Registry authority        | Compiler output can propose only an operation ID; the trusted registry owns goal, effect, and the typed frame, and unknown operations bypass                                              | API, malformed-adapter, and effect tests           |
+| IW17 | Deterministic baseline    | Explicit locale + alias rules converge under bounded lexical normalization; punctuation, negation, quantities, and unseen text are not fuzzily removed                                    | Exact-alias and adversarial tests                  |
+| IW18 | Split-safe fixture        | Case families and explicit equivalent/distinct comparisons cannot cross splits or contradict canonical ground truth                                                                       | Strict JSONL parser tests                          |
+| IW19 | Multi-dimensional report  | Evaluation reports exact accuracy, bypasses, unsafe accepts, repeatability, convergence, false merges, per-phenomenon rates, and statistical readiness separately                         | Evaluator and CLI snapshots                        |
+| IW20 | No live promotion         | Every normalizer report is content-free, sets `activeCacheQualified: false`, and exposes no CLI or SDK cache-value serving path                                                           | Privacy and public API tests                       |
 
 `IW14` uses a predeclared binomial confidence method such as one-sided Wilson or
 Clopper-Pearson. Reporting zero observed errors without enough eligible
@@ -161,12 +167,21 @@ The held-out corpus must contain:
 - cold-cache, warm-cache, invalidation, store-fault, timeout, and clock-skew
   scenarios.
 
-The first increment evaluates mechanical IR and admission invariants with
-caller-supplied fixtures. A later end-to-end normalizer evaluation compares at
-least four baselines: raw exact-text hashing, embedding threshold alone, typed
-Intent IR without hard gates, and the full IntentWitness admission pipeline.
-Splits are by semantic family rather than random utterance so paraphrases of the
-same intent cannot leak across train/tuning and test sets.
+Normalizer Lab now evaluates a deterministic exact-alias baseline with strict
+case ground truth and explicit equivalent/distinct pairs. Its parser rejects
+family leakage across development and held-out splits. A later end-to-end
+normalizer evaluation still compares at least four baselines: raw exact-text
+hashing, embedding threshold alone, typed Intent IR without hard gates, and the
+full IntentWitness admission pipeline. Splits remain by semantic family rather
+than random utterance so paraphrases of the same intent cannot leak across
+train/tuning and test sets.
+
+Normalizer Lab treats explicit fixture pairs as curated, potentially correlated
+comparisons. Its automatic bound is therefore always `null` and statistical
+readiness remains false. Only an independent evaluation with an attested IID (or
+otherwise justified) sampling protocol may apply the predeclared confidence
+method required by IW14. Passing a small conformance fixture does not satisfy
+IW14 or qualify an active cache.
 
 ## Promotion sequence
 

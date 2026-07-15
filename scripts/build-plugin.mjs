@@ -8,6 +8,28 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const pluginRoot = resolve(root, 'plugins/semwitness');
 const outfile = resolve(pluginRoot, 'dist/cli.mjs');
 
+async function assertReleaseMetadata() {
+  const packageJson = JSON.parse(
+    await readFile(resolve(root, 'package.json'), 'utf8'),
+  );
+  const pluginJson = JSON.parse(
+    await readFile(resolve(pluginRoot, '.codex-plugin/plugin.json'), 'utf8'),
+  );
+  const cliSource = await readFile(
+    resolve(root, 'src/entrypoints/cli.ts'),
+    'utf8',
+  );
+  if (packageJson.name !== pluginJson.name) {
+    throw new Error('Package and plugin names must match');
+  }
+  if (packageJson.version !== pluginJson.version) {
+    throw new Error('Package and plugin versions must match');
+  }
+  if (!cliSource.includes(`const VERSION = '${packageJson.version}';`)) {
+    throw new Error('Package and CLI versions must match');
+  }
+}
+
 function packageNameFromInput(input) {
   const normalized = input.replaceAll('\\', '/');
   const marker = 'node_modules/';
@@ -92,6 +114,7 @@ async function writePluginNotices(metafile) {
   );
 }
 
+await assertReleaseMetadata();
 await mkdir(dirname(outfile), { recursive: true });
 const result = await build({
   banner: {
