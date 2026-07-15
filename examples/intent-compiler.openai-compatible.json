@@ -1,0 +1,17 @@
+{
+  "schema": "semwitness.dev/intent-compiler-binding/v1",
+  "adapter": "openai-compatible",
+  "config": {
+    "provider": {
+      "name": "local-ollama",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "model": "qwen3:8b"
+    },
+    "policy": {
+      "requestTimeoutMs": 30000,
+      "maxResponseBytes": 262144,
+      "maxOutputTokens": 256,
+      "maxPromptBytes": 131072
+    }
+  }
+}
