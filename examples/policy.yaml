@@ -1,0 +1,62 @@
+apiVersion: semwitness.dev/v1alpha1
+mode: shadow
+rules:
+  - match:
+      roles:
+        - system
+        - developer
+    codecs:
+      - identity
+    allowEquivalence:
+      - byte-exact
+  - match:
+      kinds:
+        - code
+        - diff
+        - tool-schema
+        - tool-call
+    codecs:
+      - identity
+    allowEquivalence:
+      - byte-exact
+  - match:
+      kinds:
+        - log
+    codecs:
+      - identity
+      - whitespace-rle
+      - log-repeat
+    allowEquivalence:
+      - byte-exact
+      - roundtrip-exact
+  - match:
+      kinds:
+        - json-data
+    codecs:
+      - identity
+      - json-jcs
+    allowEquivalence:
+      - byte-exact
+      - typed-semantic
+  - match: {}
+    codecs:
+      - identity
+    allowEquivalence:
+      - byte-exact
+selection:
+  objective: input-tokens
+  minTokenSavings: 4
+  minSavingsRatioPpm: 50000
+  includeDecoderLegendTokens: true
+  allowHeuristicApply: false
+limits:
+  maxInputBytes: 2097152
+  maxEncodedBytes: 2097152
+  maxDecodeBytes: 4194304
+  maxDepth: 64
+  maxItems: 100000
+  maxCodecMs: 1000
+fallback: original
+tokenizerId: heuristic-v1
+store:
+  namespace: default

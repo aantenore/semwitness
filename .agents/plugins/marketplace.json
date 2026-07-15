@@ -1,0 +1,20 @@
+{
+  "name": "semwitness-local",
+  "interface": {
+    "displayName": "Semwitness Local"
+  },
+  "plugins": [
+    {
+      "name": "semwitness",
+      "source": {
+        "source": "local",
+        "path": "./plugins/semwitness"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

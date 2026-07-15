@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Node 24 / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 11.13.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm build
+      - name: Verify committed plugin artifacts
+        if: runner.os != 'Windows'
+        run: >-
+          git diff --exit-code --
+          plugins/semwitness/dist/cli.mjs
+          plugins/semwitness/LICENSE
+          plugins/semwitness/THIRD_PARTY_NOTICES
+      - run: node plugins/semwitness/dist/cli.mjs --help
+      - name: Verify Node plugin launcher
+        run: node plugins/semwitness/scripts/semwitness.mjs --help
+      - name: Verify POSIX plugin launcher
+        if: runner.os != 'Windows'
+        run: plugins/semwitness/scripts/semwitness.sh --help
+      - name: Verify PowerShell plugin launcher
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./plugins/semwitness/scripts/semwitness.ps1 --help
+      - run: pnpm pack --dry-run
+      - name: Verify installed npm CLI
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/semwitness-package" "$RUNNER_TEMP/semwitness-install"
+          package_path=$(pnpm pack \
+            --pack-destination "$RUNNER_TEMP/semwitness-package" | tail -n 1)
+          test -f "$package_path"
+          npm install --ignore-scripts --prefix "$RUNNER_TEMP/semwitness-install" \
+            "$package_path"
+          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" --version
+          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" --help
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 11.13.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --audit-level=high
