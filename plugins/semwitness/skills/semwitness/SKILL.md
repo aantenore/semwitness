@@ -58,10 +58,10 @@ If the launcher reports that `dist/cli.mjs` is missing, stop and explain that th
     every selected fixture source to the configured provider. Remote evaluation
     requires both `--compiler-config` and `--allow-network`, plus a deliberate
     bounded `--max-requests`; never add the network flag implicitly.
-12. Compiler bindings may name a secret only through `apiKeyEnv` matching
-    `SEMWITNESS_*`. Never place an API key in JSON, a CLI flag, chat output, or a
-    report. Compiler or consensus agreement is candidate evidence, not semantic
-    proof or cache authorization.
+12. Compiler bindings may reference a credential only through `environmentRef`
+    matching `SEMWITNESS_*`. Never place an API key in JSON, a CLI flag, chat
+    output, or a report. Compiler or consensus agreement is candidate evidence,
+    not semantic proof or cache authorization.
 13. The plugin cannot transparently replace prompt ingress. Actual token savings
     require a visible Codex SDK/App Server integration or gateway that applies a
     separately admitted candidate before the provider call.

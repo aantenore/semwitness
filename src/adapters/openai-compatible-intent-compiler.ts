@@ -43,7 +43,7 @@ const COMPILER_ARTIFACT_DIGEST = sha256(
 const CATALOG_SCHEMA =
   'semwitness.dev/openai-compatible-intent-catalog/v1' as const;
 const SAFE_OPERATION_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/u;
-const SAFE_API_KEY_ENV = /^SEMWITNESS_[A-Z0-9_]{1,116}$/u;
+const SAFE_ENVIRONMENT_REF = /^SEMWITNESS_[A-Z0-9_]{1,116}$/u;
 const SAFE_PROVIDER_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 
 const SYSTEM_INSTRUCTIONS = [
@@ -105,7 +105,7 @@ const configSchema = z
         name: z.string().regex(SAFE_PROVIDER_NAME),
         baseUrl: z.string().min(1).max(2_048),
         model: z.string().min(1).max(256).refine(isSafeModel),
-        apiKeyEnv: z.string().regex(SAFE_API_KEY_ENV).optional(),
+        environmentRef: z.string().regex(SAFE_ENVIRONMENT_REF).optional(),
       })
       .strict(),
     policy: z
@@ -132,7 +132,7 @@ export interface OpenAICompatibleIntentCompilerConfig {
     readonly name: string;
     readonly baseUrl: string;
     readonly model: string;
-    readonly apiKeyEnv?: string;
+    readonly environmentRef?: string;
   };
   readonly policy: {
     readonly requestTimeoutMs: number;
@@ -189,7 +189,7 @@ export class OpenAICompatibleIntentCompiler
   readonly #baseUrl: string;
   readonly #model: string;
   readonly #providerName: string;
-  readonly #apiKeyEnv: string | undefined;
+  readonly #environmentRef: string | undefined;
   readonly #policy: OpenAICompatibleIntentCompilerConfig['policy'];
   readonly #environment: Readonly<Record<string, string | undefined>>;
   readonly #fetch: typeof globalThis.fetch;
@@ -252,7 +252,7 @@ export class OpenAICompatibleIntentCompiler
       this.#baseUrl = baseUrl;
       this.#model = parsedConfig.provider.model;
       this.#providerName = parsedConfig.provider.name;
-      this.#apiKeyEnv = parsedConfig.provider.apiKeyEnv;
+      this.#environmentRef = parsedConfig.provider.environmentRef;
       this.#policy = Object.freeze({ ...parsedConfig.policy });
       this.#environment = options.environment ?? process.env;
       this.#fetch = boundedFetch;
@@ -276,7 +276,7 @@ export class OpenAICompatibleIntentCompiler
               endpoint,
               providerName: this.#providerName,
               model: this.#model,
-              apiKeyEnv: this.#apiKeyEnv,
+              environmentRef: this.#environmentRef,
               policy: this.#policy,
               promptDigest,
               promptTemplateDigest:
@@ -317,8 +317,8 @@ export class OpenAICompatibleIntentCompiler
       }
 
       let apiKey: string | undefined;
-      if (this.#apiKeyEnv !== undefined) {
-        const candidate = this.#environment[this.#apiKeyEnv];
+      if (this.#environmentRef !== undefined) {
+        const candidate = this.#environment[this.#environmentRef];
         if (!usableApiKey(candidate)) return COMPILER_FAILURE;
         apiKey = candidate;
       }

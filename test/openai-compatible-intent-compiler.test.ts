@@ -77,7 +77,7 @@ function config(
       name: 'mock-provider',
       baseUrl: 'https://provider.invalid/v1',
       model: 'intent-model',
-      apiKeyEnv: 'SEMWITNESS_TEST_API_KEY',
+      environmentRef: 'SEMWITNESS_TEST_API_KEY',
       ...overrides,
     },
     policy: {
@@ -579,7 +579,7 @@ describe('OpenAICompatibleIntentCompiler', () => {
     ).toThrowError(OpenAICompatibleIntentCompilerConfigurationError);
     expect(() =>
       compiler(upstream, {
-        config: config({ apiKeyEnv: 'OPENAI_API_KEY' }),
+        config: config({ environmentRef: 'OPENAI_API_KEY' }),
       }),
     ).toThrowError(OpenAICompatibleIntentCompilerConfigurationError);
 
@@ -597,7 +597,7 @@ describe('OpenAICompatibleIntentCompiler', () => {
     expect(missingKeyFetch).not.toHaveBeenCalled();
   });
 
-  it('does not consult ambient provider credentials when apiKeyEnv is omitted', async () => {
+  it('does not consult ambient provider credentials when environmentRef is omitted', async () => {
     const base = config();
     const publicConfig: OpenAICompatibleIntentCompilerConfig = {
       ...base,
@@ -648,7 +648,7 @@ describe('OpenAICompatibleIntentCompiler', () => {
       config: config({ baseUrl: 'https://other.invalid/v1' }),
     });
     const otherCredentialRef = compiler(noFetch, {
-      config: config({ apiKeyEnv: 'SEMWITNESS_OTHER_API_KEY' }),
+      config: config({ environmentRef: 'SEMWITNESS_OTHER_API_KEY' }),
     });
     const policySource = config();
     const otherPolicy = compiler(noFetch, {
