@@ -1,0 +1,18 @@
+2026-07-15T12:00:00.000Z INFO stage=prepare worker=demo-worker status=ready
+2026-07-15T12:00:01.000Z INFO stage=compile worker=demo-worker unit=core status=passed
+2026-07-15T12:00:01.000Z INFO stage=compile worker=demo-worker unit=core status=passed
+2026-07-15T12:00:01.000Z INFO stage=compile worker=demo-worker unit=core status=passed
+2026-07-15T12:00:01.000Z INFO stage=compile worker=demo-worker unit=core status=passed
+2026-07-15T12:00:01.000Z INFO stage=compile worker=demo-worker unit=core status=passed
+2026-07-15T12:00:01.000Z INFO stage=compile worker=demo-worker unit=core status=passed
+2026-07-15T12:00:02.000Z INFO stage=test worker=demo-worker suite=unit status=passed
+2026-07-15T12:00:02.000Z INFO stage=test worker=demo-worker suite=unit status=passed
+2026-07-15T12:00:02.000Z INFO stage=test worker=demo-worker suite=unit status=passed
+2026-07-15T12:00:02.000Z INFO stage=test worker=demo-worker suite=unit status=passed
+2026-07-15T12:00:02.000Z INFO stage=test worker=demo-worker suite=unit status=passed
+2026-07-15T12:00:02.000Z INFO stage=test worker=demo-worker suite=unit status=passed
+2026-07-15T12:00:03.000Z INFO stage=package worker=demo-worker artifact=demo-bundle status=created
+2026-07-15T12:00:03.000Z INFO stage=package worker=demo-worker artifact=demo-bundle status=created
+2026-07-15T12:00:03.000Z INFO stage=package worker=demo-worker artifact=demo-bundle status=created
+2026-07-15T12:00:03.000Z INFO stage=package worker=demo-worker artifact=demo-bundle status=created
+2026-07-15T12:00:04.000Z INFO stage=complete worker=demo-worker status=passed

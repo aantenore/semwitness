@@ -1,0 +1,70 @@
+{
+  "name": "semwitness",
+  "version": "0.1.0",
+  "description": "Proof-carrying semantic compression and Compression CI for AI agents.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "Antonio Antenore <ant_ant95@hotmail.it>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aantenore/semwitness.git"
+  },
+  "homepage": "https://github.com/aantenore/semwitness#readme",
+  "bugs": {
+    "url": "https://github.com/aantenore/semwitness/issues"
+  },
+  "keywords": [
+    "agentic-ai",
+    "context-compression",
+    "llm-evaluation",
+    "prompt-compression",
+    "semantic-codec"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "semwitness": "./dist/entrypoints/cli.js"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@11.13.0",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && pnpm run build:plugin",
+    "build:plugin": "node scripts/build-plugin.mjs",
+    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test",
+    "dev": "tsx src/entrypoints/cli.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "oxlint --deny-warnings src test scripts",
+    "prepack": "pnpm run build",
+    "semwitness": "tsx src/entrypoints/cli.ts",
+    "start": "node dist/entrypoints/cli.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "commander": "15.0.0",
+    "yaml": "2.9.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "esbuild": "0.28.1",
+    "oxlint": "1.74.0",
+    "prettier": "3.9.5",
+    "tsx": "4.23.1",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

@@ -1,0 +1,28 @@
+name: Feature request
+description: Propose an adapter, invariant, host integration, or evaluation improvement.
+title: '[proposal] '
+labels: [enhancement]
+body:
+  - type: textarea
+    attributes:
+      label: Problem and existing alternatives
+      description: What is missing, and which existing projects or standards were checked?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Proposed contract
+      description: Ports, configuration, proof fields, equivalence claim, and failure behavior.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Verification and net-benefit plan
+      description: Negative tests, replay corpus, token overhead, retries, cache effects, and promotion threshold.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Residual risk
+    validations:
+      required: true

@@ -1,0 +1,83 @@
+{
+  "schema": "semwitness.example/tool-result/v1",
+  "request": {
+    "operation": "list-build-workers",
+    "environment": "demo",
+    "include": ["id", "status", "queue", "capabilities", "labels"]
+  },
+  "workers": [
+    {
+      "id": "worker-alpha",
+      "status": "ready",
+      "queue": "default",
+      "capabilities": ["build", "test", "lint"],
+      "labels": {
+        "region": "local",
+        "runtime": "node-24",
+        "isolation": "process"
+      }
+    },
+    {
+      "id": "worker-bravo",
+      "status": "ready",
+      "queue": "default",
+      "capabilities": ["build", "test", "lint"],
+      "labels": {
+        "region": "local",
+        "runtime": "node-24",
+        "isolation": "process"
+      }
+    },
+    {
+      "id": "worker-charlie",
+      "status": "ready",
+      "queue": "default",
+      "capabilities": ["build", "test", "lint"],
+      "labels": {
+        "region": "local",
+        "runtime": "node-24",
+        "isolation": "process"
+      }
+    },
+    {
+      "id": "worker-delta",
+      "status": "ready",
+      "queue": "default",
+      "capabilities": ["build", "test", "lint"],
+      "labels": {
+        "region": "local",
+        "runtime": "node-24",
+        "isolation": "process"
+      }
+    },
+    {
+      "id": "worker-echo",
+      "status": "ready",
+      "queue": "default",
+      "capabilities": ["build", "test", "lint"],
+      "labels": {
+        "region": "local",
+        "runtime": "node-24",
+        "isolation": "process"
+      }
+    },
+    {
+      "id": "worker-foxtrot",
+      "status": "ready",
+      "queue": "default",
+      "capabilities": ["build", "test", "lint"],
+      "labels": {
+        "region": "local",
+        "runtime": "node-24",
+        "isolation": "process"
+      }
+    }
+  ],
+  "summary": {
+    "ready": 6,
+    "busy": 0,
+    "offline": 0,
+    "queue": "default",
+    "nextAction": "schedule-build"
+  }
+}
