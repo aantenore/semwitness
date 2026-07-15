@@ -1,6 +1,12 @@
 # SemWitness
 
-**Outcome:** SemWitness can evaluate a candidate context transformation, prove its mechanical safety properties, and report the net token effect **without replacing the content sent to an LLM**. The v0.1 CLI and Codex plugin are local, shadow-only Compression CI: they keep the original as the runtime result, store recoverable originals locally, and emit a deterministic evidence bundle for review and replay.
+**Outcome:** SemWitness evaluates candidate context transformations, proves their
+mechanical safety properties, and reports net token effects **without replacing
+the content sent to an LLM**. The current release also keeps IntentWitness—a
+bounded, typed intent-normalization and cache-admission lab—inside the same
+repository. Neither path serves cached values. The historical v0.1 CLI and
+Codex plugin remain local, shadow-only Compression CI: they retain the original
+as the runtime result and emit deterministic evidence for review and replay.
 
 > Proof-carrying does not mean “the meaning is mathematically proved.” A SemWitness bundle proves checkable facts such as hashes, byte-exact protected segments, reversible decoding, typed-JSON equivalence, policy/codec identity, anchors, and token accounting. Natural-language semantic equivalence is not claimed.
 
@@ -12,7 +18,7 @@ SemWitness is experimental. It is designed to answer a harder question than “h
 
 Tools such as RTK, Headroom, LLMLingua, Squeez, and Token Optimizer already cover important parts of token reduction. SemWitness does not try to replace them. It provides a codec-neutral verification layer that can eventually evaluate those kinds of transformations under one contract.
 
-Its v0.1 workflow is:
+Its historical v0.1 compression workflow is:
 
 1. classify caller-supplied content using explicit role, kind, and trust metadata;
 2. protect system/developer instructions, code, diffs, schemas, and tool calls by default;
@@ -107,6 +113,7 @@ The CLI has deliberately **no live `compress` command** in v0.1.
 | `retrieve <sha256:digest> --store <dir> --out <file>`                         | Recover an exact stored original after digest and path validation.                                                                |
 | `stats --store <dir> --json`                                                  | Count CAS-shaped regular files and bytes plus ignored malformed entries, without reading or reporting source content.             |
 | `replay --fixture <jsonl-file> [--policy <yaml-file>] [--store <dir>] --json` | Re-run a corpus deterministically and check declared mechanical expectations.                                                     |
+| `intent evaluate --normalizer <registry> --fixture <jsonl> [options]`         | Evaluate an exact-alias compiler offline, or an explicitly networked compiler in bounded shadow mode; never serve a cache value.  |
 
 `analyze` and `simulate` accept a file through `--input` or standard input, plus explicit `--role`, `--kind`, `--trust`, optional `--policy`, `--store`, and `--json`. Run `pnpm semwitness <command> --help` for the authoritative options of the checked-out version.
 
@@ -150,7 +157,7 @@ After the public repository is published with its committed plugin bundle, use
 the versioned release ref for a reproducible installation:
 
 ```bash
-codex plugin marketplace add aantenore/semwitness --ref v0.1.1
+codex plugin marketplace add aantenore/semwitness --ref v0.4.0-alpha.1
 codex plugin add semwitness@semwitness-local --json
 ```
 
@@ -167,8 +174,20 @@ Installation snapshots the plugin directory. Rebuild and reinstall after local s
 
 ## Limitations
 
-- **No transparent interception.** A Codex plugin can guide and invoke this explicit workflow, but v0.1 does not replace arbitrary prompts, tool results, or responses travelling between Codex and a model provider.
-- **Shadow mode does not itself lower a production bill.** Billed input can decrease only when an integration deliberately uses a verified candidate before the provider request. The v0.1 CLI/plugin measure that candidate and retain the original; they do not send provider requests.
+- **No transparent interception.** A Codex plugin can guide and invoke this
+  explicit workflow, but it cannot replace arbitrary prompts, tool results, or
+  responses travelling between Codex and a model provider. Actual ingress
+  savings require an SDK, App Server wrapper, or gateway that deliberately
+  applies an admitted candidate before the request.
+- **Shadow mode does not itself lower a production bill.** The historical v0.1
+  compression commands remain local. The optional OpenAI-compatible intent
+  evaluator does make provider requests only after explicit network opt-in, but
+  it still neither changes the active prompt nor serves cached work.
+- **Remote intent evaluation discloses source text.** When the optional
+  OpenAI-compatible compiler is selected, each chosen fixture source is sent to
+  the configured provider. Use only an approved endpoint and data set; secrets
+  are referenced by `SEMWITNESS_*` environment-variable name and never stored
+  in compiler-binding JSON.
 - **Post-generation compression cannot reduce billed output tokens.** Once an LLM has generated a response, those output tokens already exist. Later compression can help storage, transport, or future-context reuse, but not the completed generation charge.
 - **No universal semantic proof.** V0.1 relies on byte equality, reversible codecs, strict typed equivalence, protected anchors, and explicit bypasses. It does not certify arbitrary prose summaries.
 - **Token and cache estimates are conditional.** Counts depend on the selected tokenizer/model contract, and cache behavior belongs to the provider and host. Provider usage records remain authoritative.
@@ -182,13 +201,20 @@ See the full [threat model](docs/threat-model.md) before using SemWitness with s
 
 ## Experimental: IntentWitness
 
-IntentWitness is a separate, shadow-only bounded context inside this repository.
-It explores a complementary optimization: differently worded requests can share
-an application cache key only after a caller-supplied, typed Intent IR and every
+IntentWitness remains a separate, shadow-only bounded context inside SemWitness.
+This is deliberate: it reuses canonical evidence, privacy, and evaluation
+primitives while retaining independent schemas and promotion gates. A separate
+repository is deferred until runtime, governance, adoption, or release cadence
+actually diverges.
+
+It explores a complementary optimization: differently worded requests can
+share an application cache key only after a typed Intent IR and every
 answer-affecting binding agree exactly.
 
-The admission core deliberately does **not** guess natural-language intent. A
-host normalizer proposes an operation or Intent IR; IntentWitness then:
+The admission core deliberately does **not** treat natural-language inference
+as authority. An exact, remote, or composed compiler may propose an operation;
+the trusted registry alone owns the Intent IR and its effect. IntentWitness
+then:
 
 1. strictly validates and deterministically canonicalizes the frame;
 2. binds a preferably keyed source fingerprint, ontology, normalizer, policy,
@@ -206,8 +232,10 @@ An exact cache candidate still does not bypass authorization or freshness
 evidence supplied from the host's current authoritative state. The core
 validates that evidence; this alpha does not fetch it from those systems.
 
-The isolated alpha SDK is available only from the `semwitness/intent` subpath
-after build. Run the packaged synthetic end-to-end example with:
+The bounded core and `ConsensusIntentCompiler` are exported from
+`semwitness/intent`; the optional remote adapter is exported separately from
+`semwitness/intent/openai-compatible`. Run the packaged synthetic end-to-end
+example with:
 
 ```bash
 pnpm example:intent
@@ -222,11 +250,12 @@ review](docs/intent-witness/landscape.md).
 
 ### Normalizer Lab
 
-The offline Normalizer Lab adds the first real text-to-intent baseline without
-promoting a semantic cache. Its built-in adapter maps only explicitly declared
-locale + alias pairs to operations in a trusted registry. Goal, effect, and
-typed Intent IR remain registry-owned; punctuation, negation, quantities, and
-unknown wording are never fuzzily discarded.
+Normalizer Lab evaluates text-to-intent candidates without promoting a semantic
+cache. Its offline default maps only explicitly declared locale + alias pairs to
+operations in a trusted registry. The optional OpenAI-compatible compiler can
+propose operation IDs from natural language; its prompt, strict output schema,
+provider/model config, registry, and execution policy are digest-bound. Goal,
+effect, and typed Intent IR always remain registry-owned.
 
 Evaluate the checked-in conformance corpus with:
 
@@ -241,9 +270,39 @@ pnpm semwitness intent evaluate \
 
 The content-free report separates exact-intent accuracy, unsafe accepts,
 repeatability, positive convergence, and explicit negative-pair false merges.
-Curated fixture pairs do not prove IID sampling, so their automatic statistical
-bound is `null` and statistical readiness remains false. Every report sets
+The checked-in corpus has 120 cases: 96 intent cases and 24 safety bypasses,
+plus 48 equivalent and 96 distinct curated comparisons. Those comparisons are
+balanced coverage, not IID trials, so their automatic statistical bound is
+`null` and statistical readiness remains false. Every report sets
 `activeCacheQualified: false`.
+
+Remote shadow evaluation requires both an allowlisted, strict binding and
+explicit network opt-in:
+
+```bash
+pnpm semwitness intent evaluate \
+  --normalizer examples/intent-normalizer.json \
+  --fixture examples/intent-normalizer-eval.jsonl \
+  --compiler-config examples/intent-compiler.openai-compatible.json \
+  --allow-network \
+  --max-requests 100 \
+  --split conformance \
+  --runs 2 \
+  --json
+```
+
+The CLI computes selected cases × runs before constructing the compiler and
+rejects work beyond the budget. The adapter uses bounded transport, no redirects
+or retries, no tools, and no telemetry. Its digest-bound `maxPromptBytes` policy
+caps the combined system instructions, operation catalog, locale, and source
+text before credentials or network are touched. It sends source text to the
+configured provider and remains candidate generation—not semantic proof or
+cache authority.
+
+For stricter candidate generation, `ConsensusIntentCompiler` composes two to
+eight distinct-manifest compilers sharing one ontology. Its `all-agree` policy
+requires every valid, unambiguous proposal to name the same operation; otherwise
+it bypasses. Agreement is still not proof of natural-language equivalence.
 See the [Normalizer Lab contract](docs/intent-witness/normalizer-lab.md).
 
 ## Roadmap
@@ -253,7 +312,7 @@ See the [Normalizer Lab contract](docs/intent-witness/normalizer-lab.md).
 3. Build an opt-in Codex App Server or SDK adapter that can apply an admitted candidate at the application boundary before a model call. This will be a separate, visible integration—not a claim that the plugin can intercept traffic.
 4. Add a Claude adapter using the host surfaces Claude actually exposes while preserving identical policy, witness, and replay semantics.
 5. Explore signed/HMAC witnesses, privacy-preserving digest modes, policy attestations, and organization-level Compression CI.
-6. Extend Normalizer Lab beyond its deterministic exact-alias baseline with held-out domain corpora and optional provider adapters, then compare exact-hash, RedisVL/semantic-router, and vCache-style approaches before considering active reuse.
+6. Extend Normalizer Lab with independently sampled domain corpora, entity and temporal resolvers, and additional provider adapters; compare exact-hash, consensus, RedisVL/semantic-router, and vCache-style approaches before considering active reuse.
 
 ## Design notes
 

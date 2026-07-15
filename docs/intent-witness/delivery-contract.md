@@ -9,9 +9,10 @@
 
 ## Decision
 
-Build IntentWitness in the SemWitness repository as a separate bounded context,
-not as a compression codec and not yet as a separate product. It shares
-SemWitness's provider-neutral policy, witness, replay, and host-integration
+Keep IntentWitness in the SemWitness repository as a separate bounded context,
+not as a compression codec and not yet as a separate product. The v0.4 alpha
+confirms this decision after adding exact, remote, and consensus compiler seams.
+It shares SemWitness's provider-neutral policy, witness, replay, and host-integration
 principles, while keeping independent schemas, versions, reason codes, and
 promotion gates.
 
@@ -30,13 +31,15 @@ and integration work before the core hypothesis has been validated.
 
 ## Objective
 
-Determine whether differently worded requests can eventually be compiled into
-the same typed, canonical Intent IR and therefore share cached work without
-unsafe semantic guessing. The first mechanical increment accepts a
-caller-supplied Intent IR candidate plus normalization evidence; it validates,
-canonicalizes, and evaluates that candidate but does not yet parse natural
-language or resolve entities. Every decision is shadow-only (`applied: false`),
-so the host's ordinary uncached path remains authoritative.
+Determine whether differently worded requests can compile into the same typed,
+canonical Intent IR and therefore identify potentially reusable work without
+unsafe semantic authority. The mechanical core accepts caller-produced evidence;
+Normalizer Lab now supplies an exact-alias baseline, an optional
+OpenAI-compatible candidate compiler, and an all-agree consensus wrapper.
+Compilers propose operation IDs only. The strict host registry owns the frame
+and effect, and entity/context resolution remains external. Every decision is
+shadow-only (`applied: false`), so the host's ordinary uncached path remains
+authoritative.
 
 The product hypothesis is stronger than an embedding-similarity cache:
 
@@ -80,12 +83,32 @@ Must:
   remains responsible for its ordinary path.
 - Preserve the source request outside reports; evidence may contain bounded
   metadata, digests, counters, versions, and reason codes only.
+- Keep the exact-alias compiler as the offline CLI default.
+- Export `ConsensusIntentCompiler` from `semwitness/intent`; require `all-agree`
+  across two to eight distinct compiler manifests sharing one ontology, and
+  bypass on disagreement, ambiguity, member failure, malformed output, or
+  abort.
+- Export the optional remote adapter from
+  `semwitness/intent/openai-compatible`. It may propose only a registry operation
+  ID and must bind provider/model config, registry, prompt, output schema, and
+  execution policy digests.
+- Restrict remote transport to the configured origin and resolved
+  `chat/completions` path, deny redirects, bound deadline and body size, disable
+  retries/tools/telemetry, and load credentials only from an explicitly named
+  `SEMWITNESS_*` environment variable.
+- Require a digest-bound `maxPromptBytes` policy that caps the combined system
+  instructions, operation catalog, locale, and source text before credential
+  resolution or network access.
+- Treat the selected fixture source as explicit provider disclosure. Keep remote
+  reports content-free; shadow mode still cannot authorize or serve a cache hit.
+- Require `--compiler-config` and `--allow-network` together in the CLI. Before
+  constructing the compiler, calculate selected fixture cases × runs and reject
+  work above the bounded `--max-requests` budget (default 100).
 
-Should, after the mechanical increment:
+Should, after the current alpha:
 
-- Expand the implemented deterministic exact-alias compiler into versioned,
-  domain-specific resolvers before adding optional LLM compilers behind the
-  same schema and evidence contract.
+- Expand domain-specific entity, unit, temporal, and context resolvers behind
+  the same schema and evidence contract.
 - Keep compiler, entity resolver, embedding index, authorizer, freshness
   resolver, policy engine, cache store, clock, and telemetry behind replaceable
   ports selected from allowlisted registries.
@@ -101,8 +124,8 @@ Should, after the mechanical increment:
 
 Out of scope for the shadow MVP:
 
-- Natural-language intent compilation, entity resolution, vector lookup, or a
-  distributed cache implementation in the first mechanical increment.
+- Authoritative entity resolution, vector lookup, or a distributed cache
+  implementation.
 - Serving any cached plan, observation, or response to a user or tool.
 - Executing an action from a cache entry.
 - Cross-tenant reuse, even when the visible text is public or identical.
@@ -125,28 +148,32 @@ promotion of `observation` or `response`.
 
 ## Acceptance criteria
 
-| ID   | Requirement               | Acceptance                                                                                                                                                                                | Verification                                       |
-| ---- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| IW1  | Independent contract      | IR, normalization witness, and cache-hit witness use the three declared `v1alpha1` schema IDs and their own reason-code namespace; no codec ID participates                               | Schema and architecture review                     |
-| IW2  | Deterministic IR          | The same valid caller-supplied Intent IR produces the same canonical IR digest                                                                                                            | Repeated property tests across supported platforms |
-| IW3  | Candidate boundary        | The core does not infer natural language; it binds a caller-supplied candidate to normalizer, ontology, source, and policy evidence                                                       | API and negative tests                             |
-| IW4  | Future normalizer gate    | Before any compiler is promoted, positive paraphrases must converge and negation, quantifier, entity, unit, time, permission, locale, format, or effect near-misses must not              | External held-out and adversarial replay           |
-| IW5  | Candidate-only embeddings | Adding or changing optional caller-supplied embedding/similarity evidence cannot convert a hard-gate rejection into an eligible shadow decision                                           | Metamorphic tests                                  |
-| IW6  | Exact admission           | An eligible shadow decision requires the exact canonical IR digest and successful scope/auth/freshness/policy/effect/dependency gates                                                     | Unit, property, and mutation tests                 |
-| IW7  | Tier isolation            | Entry and lookup require an exact tier binding; `plan`, `observation`, and `response` cannot be substituted                                                                               | Cross-tier mismatch tests                          |
-| IW8  | Side-effect safety        | Observation and response hits for `write` or `irreversible` requests are exactly zero                                                                                                     | Exhaustive policy tests and shadow telemetry       |
-| IW9  | Isolation                 | Cross-tenant and unauthorized hits are exactly zero                                                                                                                                       | Adversarial multi-tenant replay                    |
-| IW10 | Freshness                 | Stale observation and response hits are exactly zero under a deterministic test clock                                                                                                     | Boundary, clock-skew, and source-version tests     |
-| IW11 | Shadow honesty            | Every decision has `applied: false`; the library returns evidence, not a cached value, and host integration keeps the ordinary path authoritative                                         | API and integration trace assertions               |
-| IW12 | Fail closed               | Malformed, missing, unsupported, tampered, or mismatched evidence is rejected with a structured error or an `applied: false` bypass; future adapter faults must do the same               | Negative tests and future fault injection          |
-| IW13 | Privacy                   | Reports and default logs contain no request, response, tool result, secret, tenant name, or user identifier                                                                               | Snapshot tests and source scans                    |
-| IW14 | False-hit bound           | The one-sided 95% upper confidence bound is at most `0.001` for eligible plan/observation would-hits and at most `0.0001` for response would-hits, with zero observed response false hits | Independent held-out evaluation                    |
-| IW15 | Net value                 | Savings and latency estimates include compiler, embedding, lookup, verifier, miss, shadow comparison, invalidation, and recovery costs                                                    | Provider-observed workload report                  |
-| IW16 | Registry authority        | Compiler output can propose only an operation ID; the trusted registry owns goal, effect, and the typed frame, and unknown operations bypass                                              | API, malformed-adapter, and effect tests           |
-| IW17 | Deterministic baseline    | Explicit locale + alias rules converge under bounded lexical normalization; punctuation, negation, quantities, and unseen text are not fuzzily removed                                    | Exact-alias and adversarial tests                  |
-| IW18 | Split-safe fixture        | Case families and explicit equivalent/distinct comparisons cannot cross splits or contradict canonical ground truth                                                                       | Strict JSONL parser tests                          |
-| IW19 | Multi-dimensional report  | Evaluation reports exact accuracy, bypasses, unsafe accepts, repeatability, convergence, false merges, per-phenomenon rates, and statistical readiness separately                         | Evaluator and CLI snapshots                        |
-| IW20 | No live promotion         | Every normalizer report is content-free, sets `activeCacheQualified: false`, and exposes no CLI or SDK cache-value serving path                                                           | Privacy and public API tests                       |
+| ID   | Requirement               | Acceptance                                                                                                                                                                                                        | Verification                                       |
+| ---- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| IW1  | Independent contract      | IR, normalization witness, and cache-hit witness use the three declared `v1alpha1` schema IDs and their own reason-code namespace; no codec ID participates                                                       | Schema and architecture review                     |
+| IW2  | Deterministic IR          | The same valid caller-supplied Intent IR produces the same canonical IR digest                                                                                                                                    | Repeated property tests across supported platforms |
+| IW3  | Candidate boundary        | The core never treats compiler inference as authority; it binds the proposed operation/frame to registry, normalizer, ontology, source, and policy evidence                                                       | API and negative tests                             |
+| IW4  | Normalizer gate           | Before any compiler is promoted, positive paraphrases must converge and negation, quantifier, entity, unit, time, permission, locale, format, or effect near-misses must not                                      | External held-out and adversarial replay           |
+| IW5  | Candidate-only embeddings | Adding or changing optional caller-supplied embedding/similarity evidence cannot convert a hard-gate rejection into an eligible shadow decision                                                                   | Metamorphic tests                                  |
+| IW6  | Exact admission           | An eligible shadow decision requires the exact canonical IR digest and successful scope/auth/freshness/policy/effect/dependency gates                                                                             | Unit, property, and mutation tests                 |
+| IW7  | Tier isolation            | Entry and lookup require an exact tier binding; `plan`, `observation`, and `response` cannot be substituted                                                                                                       | Cross-tier mismatch tests                          |
+| IW8  | Side-effect safety        | Observation and response hits for `write` or `irreversible` requests are exactly zero                                                                                                                             | Exhaustive policy tests and shadow telemetry       |
+| IW9  | Isolation                 | Cross-tenant and unauthorized hits are exactly zero                                                                                                                                                               | Adversarial multi-tenant replay                    |
+| IW10 | Freshness                 | Stale observation and response hits are exactly zero under a deterministic test clock                                                                                                                             | Boundary, clock-skew, and source-version tests     |
+| IW11 | Shadow honesty            | Every decision has `applied: false`; the library returns evidence, not a cached value, and host integration keeps the ordinary path authoritative                                                                 | API and integration trace assertions               |
+| IW12 | Fail closed               | Malformed, missing, unsupported, tampered, or mismatched evidence is rejected with a structured error or an `applied: false` bypass; future adapter faults must do the same                                       | Negative tests and future fault injection          |
+| IW13 | Privacy                   | Reports and default logs contain no request, response, tool result, secret, tenant name, or user identifier                                                                                                       | Snapshot tests and source scans                    |
+| IW14 | False-hit bound           | The one-sided 95% upper confidence bound is at most `0.001` for eligible plan/observation would-hits and at most `0.0001` for response would-hits, with zero observed response false hits                         | Independent held-out evaluation                    |
+| IW15 | Net value                 | Savings and latency estimates include compiler, embedding, lookup, verifier, miss, shadow comparison, invalidation, and recovery costs                                                                            | Provider-observed workload report                  |
+| IW16 | Registry authority        | Compiler output can propose only an operation ID; the trusted registry owns goal, effect, and the typed frame, and unknown operations bypass                                                                      | API, malformed-adapter, and effect tests           |
+| IW17 | Deterministic baseline    | Explicit locale + alias rules converge under bounded lexical normalization; punctuation, negation, quantities, and unseen text are not fuzzily removed                                                            | Exact-alias and adversarial tests                  |
+| IW18 | Split-safe fixture        | Case families and explicit equivalent/distinct comparisons cannot cross splits or contradict canonical ground truth                                                                                               | Strict JSONL parser tests                          |
+| IW19 | Multi-dimensional report  | Evaluation reports exact accuracy, bypasses, unsafe accepts, repeatability, convergence, false merges, per-phenomenon rates, and statistical readiness separately                                                 | Evaluator and CLI snapshots                        |
+| IW20 | No live promotion         | Every normalizer report is content-free, sets `activeCacheQualified: false`, and exposes no CLI or SDK cache-value serving path                                                                                   | Privacy and public API tests                       |
+| IW21 | Remote compiler boundary  | The OpenAI-compatible adapter emits operation proposals only; the registry owns Intent IR/effect, all prompt/output/config bindings are digest-bound, and transport/retry/tool/telemetry restrictions fail closed | Adapter and adversarial transport tests            |
+| IW22 | Consensus fail-closed     | Two to eight distinct-manifest members with one ontology must all return the same valid unambiguous operation; every mixed, failed, bypassed, malformed, or aborted outcome bypasses                              | Consensus unit and mutation tests                  |
+| IW23 | Explicit network budget   | Network evaluation requires config plus opt-in, rejects unknown/secret-valued bindings, and checks selected cases × runs against the request budget before compiler construction                                  | CLI mocked-network tests                           |
+| IW24 | Curated corpus accounting | The checked-in corpus contains exactly 96 intent cases, 24 safety bypasses, 48 equivalent pairs, and 96 distinct pairs, while reports label all pair statistics non-IID                                           | Corpus invariant and report tests                  |
 
 `IW14` uses a predeclared binomial confidence method such as one-sided Wilson or
 Clopper-Pearson. Reporting zero observed errors without enough eligible
@@ -167,13 +194,15 @@ The held-out corpus must contain:
 - cold-cache, warm-cache, invalidation, store-fault, timeout, and clock-skew
   scenarios.
 
-Normalizer Lab now evaluates a deterministic exact-alias baseline with strict
-case ground truth and explicit equivalent/distinct pairs. Its parser rejects
-family leakage across development and held-out splits. A later end-to-end
-normalizer evaluation still compares at least four baselines: raw exact-text
-hashing, embedding threshold alone, typed Intent IR without hard gates, and the
-full IntentWitness admission pipeline. Splits remain by semantic family rather
-than random utterance so paraphrases of the same intent cannot leak across
+Normalizer Lab now evaluates 120 checked-in cases: 96 positive intent cases
+across 12 semantic families and 24 safety bypasses. Its 48 equivalent pairs
+cover each positive case once; its 96 distinct pairs cover each positive case
+twice. These are curated, balanced coverage invariants—not independent trials.
+The strict parser rejects family leakage across development and held-out splits.
+A later end-to-end evaluation still compares at least four baselines: raw
+exact-text hashing, embedding threshold alone, typed Intent IR without hard
+gates, and full IntentWitness admission. Splits remain by semantic family rather
+than random utterance so paraphrases of one intent cannot leak across
 train/tuning and test sets.
 
 Normalizer Lab treats explicit fixture pairs as curated, potentially correlated
