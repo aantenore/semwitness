@@ -4,15 +4,24 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import { HeuristicTokenizer } from '../adapters/heuristic-tokenizer.js';
+import {
+  OpenAICompatibleIntentCompiler,
+  type OpenAICompatibleIntentCompilerConfig,
+} from '../adapters/openai-compatible-intent-compiler.js';
 import { analyzeSegment } from '../application/analyze.js';
 import { simulateSegment } from '../application/simulate.js';
 import {
   createDefaultRegistry,
   createSemWitness,
 } from '../composition-root.js';
-import { canonicalJson, toJsonValue } from '../domain/canonical-json.js';
+import {
+  canonicalJson,
+  toJsonValue,
+  type JsonValue,
+} from '../domain/canonical-json.js';
 import { SemWitnessError } from '../domain/errors.js';
 import { isSha256Digest } from '../domain/hash.js';
+import { parseStrictJson } from '../domain/strict-json.js';
 import {
   isSegmentKind,
   isSegmentRole,
@@ -33,6 +42,7 @@ import {
   evaluateIntentNormalizer,
   parseIntentEvaluationJsonl,
   type IntentEvaluationCase,
+  type IntentEvaluationFixture,
 } from '../intent/index.js';
 import {
   createSimulationBundle,
@@ -52,9 +62,16 @@ import {
   writeNewPrivateFile,
 } from './io.js';
 
-const VERSION = '0.3.0-alpha.1';
+const VERSION = '0.4.0-alpha.1';
 const ERROR_SCHEMA = 'semwitness.dev/cli-error/v1alpha1';
 const MAX_INTENT_NORMALIZER_BYTES = 4 * 1024 * 1024;
+const MAX_INTENT_COMPILER_BINDING_BYTES = 64 * 1024;
+const DEFAULT_MAX_INTENT_REQUESTS = 100;
+const MAX_INTENT_REQUESTS = 1_000;
+const INTENT_COMPILER_BINDING_SCHEMA =
+  'semwitness.dev/intent-compiler-binding/v1' as const;
+const SAFE_COMPILER_ENV = /^SEMWITNESS_[A-Z0-9_]{1,116}$/u;
+const SAFE_PROVIDER_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 
 interface InputOptions {
   readonly input: string;
@@ -230,17 +247,34 @@ export async function runCli(
 
   const intent = program
     .command('intent')
-    .description('Evaluate typed intent normalization in offline shadow mode.');
+    .description(
+      'Evaluate typed intent normalization in shadow mode, offline by default.',
+    );
 
   intent
     .command('evaluate')
     .description(
-      'Evaluate a declarative normalizer against strict JSONL ground truth.',
+      'Evaluate an offline exact-alias or explicitly networked compiler against strict JSONL ground truth.',
     )
     .requiredOption('--fixture <file>', 'Strict intent evaluation JSONL file')
     .requiredOption(
       '--normalizer <file>',
-      'Strict declarative normalizer JSON file',
+      'Trusted strict operation-registry JSON file',
+    )
+    .option(
+      '--compiler-config <file>',
+      'Strict versioned compiler binding; openai-compatible only',
+    )
+    .option(
+      '--allow-network',
+      'Explicitly permit requests selected by --compiler-config',
+      false,
+    )
+    .option(
+      '--max-requests <count>',
+      'Maximum selected cases multiplied by runs',
+      parseMaxRequests,
+      DEFAULT_MAX_INTENT_REQUESTS,
     )
     .option(
       '--split <split>',
@@ -254,9 +288,13 @@ export async function runCli(
       async (options: {
         fixture: string;
         normalizer: string;
+        compilerConfig?: string;
+        allowNetwork: boolean;
+        maxRequests: number;
         split: IntentEvaluationCase['split'] | 'all';
         runs: number;
       }) => {
+        assertIntentNetworkSelection(options);
         const normalizerSource = decodeUtf8(
           await readBoundedRegularFile(
             options.normalizer,
@@ -268,11 +306,35 @@ export async function runCli(
           await readBoundedRegularFile(options.fixture, MAX_FIXTURE_BYTES),
           'Intent evaluation fixture must be UTF-8',
         );
-        const normalizer = new DeclarativeIntentNormalizer(normalizerSource);
+        const fixture = parseIntentEvaluationJsonl(fixtureSource);
+        let normalizer:
+          DeclarativeIntentNormalizer | OpenAICompatibleIntentCompiler;
+        if (options.compilerConfig === undefined) {
+          normalizer = new DeclarativeIntentNormalizer(normalizerSource);
+        } else {
+          const plannedRequests = assertIntentRequestBudget(
+            fixture,
+            options.split,
+            options.runs,
+            options.maxRequests,
+          );
+          const bindingSource = decodeUtf8(
+            await readBoundedRegularFile(
+              options.compilerConfig,
+              MAX_INTENT_COMPILER_BINDING_BYTES,
+            ),
+            'Intent compiler binding must be UTF-8',
+          );
+          normalizer = new OpenAICompatibleIntentCompiler({
+            registrySource: normalizerSource,
+            config: parseIntentCompilerBinding(bindingSource),
+            fetch: createRequestBudgetFetch(plannedRequests),
+          });
+        }
         const report = await evaluateIntentNormalizer({
           compiler: normalizer,
           registry: normalizer,
-          fixture: parseIntentEvaluationJsonl(fixtureSource),
+          fixture,
           split: options.split,
           attempts: options.runs,
         });
@@ -429,6 +491,188 @@ function parseRuns(value: string): number {
     throw new InvalidArgumentError('Runs must be an integer between 2 and 20');
   }
   return parsed;
+}
+
+function parseMaxRequests(value: string): number {
+  const parsed = Number(value);
+  if (
+    !Number.isSafeInteger(parsed) ||
+    parsed < 1 ||
+    parsed > MAX_INTENT_REQUESTS
+  ) {
+    throw new InvalidArgumentError(
+      `Maximum requests must be an integer between 1 and ${MAX_INTENT_REQUESTS}`,
+    );
+  }
+  return parsed;
+}
+
+function assertIntentNetworkSelection(options: {
+  readonly compilerConfig?: string;
+  readonly allowNetwork: boolean;
+}): void {
+  if (
+    (options.compilerConfig === undefined && options.allowNetwork) ||
+    (options.compilerConfig !== undefined && !options.allowNetwork)
+  ) {
+    throw new SemWitnessError(
+      'MALFORMED_ENVELOPE',
+      'Network intent evaluation requires compiler config and explicit opt-in',
+    );
+  }
+}
+
+function assertIntentRequestBudget(
+  fixture: IntentEvaluationFixture,
+  split: IntentEvaluationCase['split'] | 'all',
+  runs: number,
+  maximumRequests: number,
+): number {
+  const selectedCases = fixture.cases.filter(
+    (item) => split === 'all' || item.split === split,
+  ).length;
+  if (
+    selectedCases === 0 ||
+    selectedCases > Math.floor(maximumRequests / runs)
+  ) {
+    throw new SemWitnessError(
+      'MALFORMED_ENVELOPE',
+      'Intent evaluation exceeds the explicit request budget',
+    );
+  }
+  return selectedCases * runs;
+}
+
+function parseIntentCompilerBinding(
+  source: string,
+): OpenAICompatibleIntentCompilerConfig {
+  let value: JsonValue;
+  try {
+    value = parseStrictJson(source, {
+      maxDepth: 8,
+      maxItems: 64,
+      maxStringCodeUnits: 2_048,
+      maxNumberCodeUnits: 32,
+    });
+  } catch {
+    throw malformedCompilerBinding();
+  }
+  const binding = strictJsonObject(value, ['schema', 'adapter', 'config']);
+  if (
+    binding === undefined ||
+    binding.schema !== INTENT_COMPILER_BINDING_SCHEMA ||
+    binding.adapter !== 'openai-compatible'
+  ) {
+    throw malformedCompilerBinding();
+  }
+  const config = strictJsonObject(binding.config, ['provider', 'policy']);
+  const provider = strictJsonObject(
+    config?.provider,
+    ['name', 'baseUrl', 'model'],
+    ['apiKeyEnv'],
+  );
+  const policy = strictJsonObject(config?.policy, [
+    'requestTimeoutMs',
+    'maxResponseBytes',
+    'maxOutputTokens',
+    'maxPromptBytes',
+  ]);
+  const apiKeyEnv = provider?.apiKeyEnv;
+  if (
+    provider === undefined ||
+    policy === undefined ||
+    typeof provider.name !== 'string' ||
+    !SAFE_PROVIDER_NAME.test(provider.name) ||
+    typeof provider.baseUrl !== 'string' ||
+    provider.baseUrl.length === 0 ||
+    provider.baseUrl.length > 2_048 ||
+    typeof provider.model !== 'string' ||
+    !isSafeModel(provider.model) ||
+    (apiKeyEnv !== undefined &&
+      (typeof apiKeyEnv !== 'string' || !SAFE_COMPILER_ENV.test(apiKeyEnv))) ||
+    !integerWithin(policy.requestTimeoutMs, 1, 300_000) ||
+    !integerWithin(policy.maxResponseBytes, 256, 8 * 1024 * 1024) ||
+    !integerWithin(policy.maxOutputTokens, 16, 4_096) ||
+    !integerWithin(policy.maxPromptBytes, 1_024, 1024 * 1024)
+  ) {
+    throw malformedCompilerBinding();
+  }
+  return Object.freeze({
+    provider: Object.freeze({
+      name: provider.name,
+      baseUrl: provider.baseUrl,
+      model: provider.model,
+      ...(apiKeyEnv === undefined ? {} : { apiKeyEnv }),
+    }),
+    policy: Object.freeze({
+      requestTimeoutMs: policy.requestTimeoutMs as number,
+      maxResponseBytes: policy.maxResponseBytes as number,
+      maxOutputTokens: policy.maxOutputTokens as number,
+      maxPromptBytes: policy.maxPromptBytes as number,
+    }),
+  });
+}
+
+function strictJsonObject(
+  input: JsonValue | undefined,
+  requiredKeys: readonly string[],
+  optionalKeys: readonly string[] = [],
+): Readonly<Record<string, JsonValue>> | undefined {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+    return undefined;
+  }
+  const keys = Object.keys(input);
+  const allowed = new Set([...requiredKeys, ...optionalKeys]);
+  if (
+    !requiredKeys.every((key) => Object.hasOwn(input, key)) ||
+    keys.some((key) => !allowed.has(key)) ||
+    keys.length < requiredKeys.length ||
+    keys.length > requiredKeys.length + optionalKeys.length
+  ) {
+    return undefined;
+  }
+  return input as Readonly<Record<string, JsonValue>>;
+}
+
+function isSafeModel(input: string): boolean {
+  if (input.length === 0 || input.length > 256) return false;
+  for (let index = 0; index < input.length; index += 1) {
+    const codeUnit = input.charCodeAt(index);
+    if (codeUnit <= 0x1f || codeUnit === 0x7f) return false;
+  }
+  return true;
+}
+
+function integerWithin(
+  input: JsonValue | undefined,
+  minimum: number,
+  maximum: number,
+): input is number {
+  return (
+    typeof input === 'number' &&
+    Number.isSafeInteger(input) &&
+    input >= minimum &&
+    input <= maximum
+  );
+}
+
+function malformedCompilerBinding(): SemWitnessError {
+  return new SemWitnessError(
+    'MALFORMED_ENVELOPE',
+    'Intent compiler binding is invalid',
+  );
+}
+
+function createRequestBudgetFetch(
+  maximumRequests: number,
+): typeof globalThis.fetch {
+  const upstream = globalThis.fetch;
+  let remaining = maximumRequests;
+  return async (input, init) => {
+    if (remaining <= 0) throw new Error('request_budget_exhausted');
+    remaining -= 1;
+    return upstream(input, init);
+  };
 }
 
 function writeJson(value: unknown): void {

@@ -1,7 +1,7 @@
 {
   "name": "semwitness",
-  "version": "0.3.0-alpha.1",
-  "description": "Proof-carrying shadow evaluation for semantic compression and typed intent normalization.",
+  "version": "0.4.0-alpha.1",
+  "description": "Proof-carrying shadow evaluation for semantic compression and bounded intent compilation.",
   "author": {
     "name": "Antonio Antenore",
     "email": "ant_ant95@hotmail.it",
@@ -23,8 +23,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "SemWitness",
-    "shortDescription": "Measure and verify semantic compression before using it.",
-    "longDescription": "SemWitness analyzes context, simulates deterministic compression, verifies proof bundles, evaluates typed intent normalizers, and measures evidence without claiming transparent interception or cache authorization.",
+    "shortDescription": "Verify compression and bounded intent candidates in shadow mode.",
+    "longDescription": "SemWitness analyzes context, verifies deterministic compression, and evaluates exact, consensus, or explicitly networked intent compilers without claiming transparent prompt interception or cache authorization.",
     "developerName": "Antonio Antenore",
     "category": "Developer Tools",
     "capabilities": ["Interactive", "Read", "Write"],
@@ -33,7 +33,8 @@
       "Analyze this context for safe token savings with SemWitness.",
       "Simulate compression and verify the resulting proof bundle.",
       "Replay this fixture and compare its measured token cost.",
-      "Evaluate this intent normalizer offline in shadow mode."
+      "Evaluate this intent normalizer offline in shadow mode.",
+      "Evaluate an OpenAI-compatible intent compiler with explicit network opt-in and a request budget."
     ],
     "brandColor": "#0F766E"
   }
