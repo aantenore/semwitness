@@ -187,8 +187,8 @@ It explores a complementary optimization: differently worded requests can share
 an application cache key only after a caller-supplied, typed Intent IR and every
 answer-affecting binding agree exactly.
 
-The first increment deliberately does **not** infer natural-language intent. A
-host normalizer proposes an Intent IR; IntentWitness then:
+The admission core deliberately does **not** guess natural-language intent. A
+host normalizer proposes an operation or Intent IR; IntentWitness then:
 
 1. strictly validates and deterministically canonicalizes the frame;
 2. binds a preferably keyed source fingerprint, ontology, normalizer, policy,
@@ -220,6 +220,32 @@ cached value. See the [architecture](docs/intent-witness/architecture.md),
 model](docs/intent-witness/threat-model.md), and [2026 landscape
 review](docs/intent-witness/landscape.md).
 
+### Normalizer Lab
+
+The offline Normalizer Lab adds the first real text-to-intent baseline without
+promoting a semantic cache. Its built-in adapter maps only explicitly declared
+locale + alias pairs to operations in a trusted registry. Goal, effect, and
+typed Intent IR remain registry-owned; punctuation, negation, quantities, and
+unknown wording are never fuzzily discarded.
+
+Evaluate the checked-in conformance corpus with:
+
+```bash
+pnpm semwitness intent evaluate \
+  --normalizer examples/intent-normalizer.json \
+  --fixture examples/intent-normalizer-eval.jsonl \
+  --split conformance \
+  --runs 2 \
+  --json
+```
+
+The content-free report separates exact-intent accuracy, unsafe accepts,
+repeatability, positive convergence, and explicit negative-pair false merges.
+Curated fixture pairs do not prove IID sampling, so their automatic statistical
+bound is `null` and statistical readiness remains false. Every report sets
+`activeCacheQualified: false`.
+See the [Normalizer Lab contract](docs/intent-witness/normalizer-lab.md).
+
 ## Roadmap
 
 1. Stabilize the v0.1 witness schema, deterministic codecs, adversarial tests, replay gate, and Codex shadow plugin.
@@ -227,7 +253,7 @@ review](docs/intent-witness/landscape.md).
 3. Build an opt-in Codex App Server or SDK adapter that can apply an admitted candidate at the application boundary before a model call. This will be a separate, visible integration—not a claim that the plugin can intercept traffic.
 4. Add a Claude adapter using the host surfaces Claude actually exposes while preserving identical policy, witness, and replay semantics.
 5. Explore signed/HMAC witnesses, privacy-preserving digest modes, policy attestations, and organization-level Compression CI.
-6. Evaluate IntentWitness against exact-hash, RedisVL/semantic-router, and vCache-style baselines before considering any active plan, observation, or response reuse.
+6. Extend Normalizer Lab beyond its deterministic exact-alias baseline with held-out domain corpora and optional provider adapters, then compare exact-hash, RedisVL/semantic-router, and vCache-style approaches before considering active reuse.
 
 ## Design notes
 
@@ -236,6 +262,7 @@ review](docs/intent-witness/landscape.md).
 - [Delivery contract](docs/delivery-contract.md)
 - [IntentWitness architecture and evidence boundary](docs/intent-witness/architecture.md)
 - [IntentWitness market and research landscape](docs/intent-witness/landscape.md)
+- [IntentWitness Normalizer Lab](docs/intent-witness/normalizer-lab.md)
 
 ## License
 

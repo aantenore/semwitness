@@ -2,3 +2,8 @@ export * from './types.js';
 export * from './canonical.js';
 export * from './normalization.js';
 export * from './admission.js';
+export * from './normalizer-types.js';
+export * from './normalizer-schemas.js';
+export * from './declarative-normalizer.js';
+export * from './compiler.js';
+export * from './evaluation.js';

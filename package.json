@@ -1,6 +1,6 @@
 {
   "name": "semwitness",
-  "version": "0.2.0-alpha.1",
+  "version": "0.3.0-alpha.1",
   "description": "Shadow evaluation for proof-carrying semantic compression and verified intent-cache admission.",
   "type": "module",
   "license": "Apache-2.0",
@@ -26,6 +26,8 @@
     "dist",
     "docs",
     "examples/intent-witness.mjs",
+    "examples/intent-normalizer.json",
+    "examples/intent-normalizer-eval.jsonl",
     "README.md",
     "LICENSE"
   ],
