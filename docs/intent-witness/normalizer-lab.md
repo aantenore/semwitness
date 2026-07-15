@@ -79,12 +79,12 @@ The adapter digest-binds the endpoint, provider/model, optional API-key
 environment-variable name, bounded execution policy, registry, prompt/template,
 and strict output schema. Runtime execution uses temperature zero, zero retries,
 no tools, and telemetry disabled. Credentials are never accepted as config
-values: `apiKeyEnv`, when present, must name a `SEMWITNESS_*` environment
-variable. Transport permits HTTPS or loopback HTTP only, one configured origin
-and resolved `chat/completions` pathname, no query/hash/credentials or redirects,
-and bounded timeout plus declared/streamed response bytes. Refusal, warning,
-unexpected content, unknown operation, malformed output, timeout, or abort
-becomes a content-free compiler bypass.
+values: `environmentRef`, when present, must name a `SEMWITNESS_*` environment
+variable containing the credential. Transport permits HTTPS or loopback HTTP
+only, one configured origin and resolved `chat/completions` pathname, no
+query/hash/credentials or redirects, and bounded timeout plus declared/streamed
+response bytes. Refusal, warning, unexpected content, unknown operation,
+malformed output, timeout, or abort becomes a content-free compiler bypass.
 
 `ConsensusIntentCompiler`, exported from `semwitness/intent`, implements an
 `all-agree` policy over two to eight members with distinct manifests and the
