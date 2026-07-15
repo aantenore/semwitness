@@ -180,6 +180,46 @@ Installation snapshots the plugin directory. Rebuild and reinstall after local s
 
 See the full [threat model](docs/threat-model.md) before using SemWitness with sensitive data.
 
+## Experimental: IntentWitness
+
+IntentWitness is a separate, shadow-only bounded context inside this repository.
+It explores a complementary optimization: differently worded requests can share
+an application cache key only after a caller-supplied, typed Intent IR and every
+answer-affecting binding agree exactly.
+
+The first increment deliberately does **not** infer natural-language intent. A
+host normalizer proposes an Intent IR; IntentWitness then:
+
+1. strictly validates and deterministically canonicalizes the frame;
+2. binds a preferably keyed source fingerprint, ontology, normalizer, policy,
+   confidence, and ambiguity to a content-free normalization witness;
+3. derives tenant-safe HMAC source, scope, and cache keys;
+4. compares the current host-supplied normalizer contract, intent, tenant,
+   principal, authorization, context, policy, effect, freshness, and the
+   mandatory dependency vector for the selected cache tier;
+5. emits an `eligible` or `bypass` cache-hit witness with `applied: false`.
+
+Embedding or similarity evidence may nominate a candidate but is structurally
+non-authoritative. `write` and `irreversible` intents can be considered only for
+non-executable plan templates; observation and response reuse require `read`.
+An exact cache candidate still does not bypass authorization or freshness
+evidence supplied from the host's current authoritative state. The core
+validates that evidence; this alpha does not fetch it from those systems.
+
+The isolated alpha SDK is available only from the `semwitness/intent` subpath
+after build. Run the packaged synthetic end-to-end example with:
+
+```bash
+pnpm example:intent
+```
+
+The example demonstrates two Italian paraphrases receiving the same Intent IR
+digest and cache key while retaining different source digests. It serves no
+cached value. See the [architecture](docs/intent-witness/architecture.md),
+[delivery contract](docs/intent-witness/delivery-contract.md), [threat
+model](docs/intent-witness/threat-model.md), and [2026 landscape
+review](docs/intent-witness/landscape.md).
+
 ## Roadmap
 
 1. Stabilize the v0.1 witness schema, deterministic codecs, adversarial tests, replay gate, and Codex shadow plugin.
@@ -187,12 +227,15 @@ See the full [threat model](docs/threat-model.md) before using SemWitness with s
 3. Build an opt-in Codex App Server or SDK adapter that can apply an admitted candidate at the application boundary before a model call. This will be a separate, visible integration—not a claim that the plugin can intercept traffic.
 4. Add a Claude adapter using the host surfaces Claude actually exposes while preserving identical policy, witness, and replay semantics.
 5. Explore signed/HMAC witnesses, privacy-preserving digest modes, policy attestations, and organization-level Compression CI.
+6. Evaluate IntentWitness against exact-hash, RedisVL/semantic-router, and vCache-style baselines before considering any active plan, observation, or response reuse.
 
 ## Design notes
 
 - [Competitive landscape and preliminary name screening](docs/landscape.md)
 - [Threat model](docs/threat-model.md)
 - [Delivery contract](docs/delivery-contract.md)
+- [IntentWitness architecture and evidence boundary](docs/intent-witness/architecture.md)
+- [IntentWitness market and research landscape](docs/intent-witness/landscape.md)
 
 ## License
 
