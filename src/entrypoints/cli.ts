@@ -45,7 +45,7 @@ import {
   writeNewPrivateFile,
 } from './io.js';
 
-const VERSION = '0.1.0';
+const VERSION = '0.1.1';
 const ERROR_SCHEMA = 'semwitness.dev/cli-error/v1alpha1';
 
 interface InputOptions {
