@@ -1,0 +1,360 @@
+# IntentWitness architecture
+
+_Shadow MVP design baseline — 2026-07-15_
+
+## Outcome
+
+IntentWitness asks whether previously observed work has the _same canonical
+intent and the same answer-affecting authority and state_. In the first
+mechanical increment, the caller supplies the proposed typed Intent IR and its
+normalization evidence. The core validates and canonicalizes it; natural-
+language compilation and entity resolution are target adapters, not implemented
+MVP claims. Different wording can eventually converge on one cache identity,
+but semantic similarity alone can never authorize reuse.
+
+The first implementation remains inside SemWitness as an isolated bounded
+context. It reuses composition, evidence, and replay conventions, but it is not
+a compression codec:
+
+- `semwitness.dev/intent-ir/v1alpha1` owns the proposed intent contract;
+- `semwitness.dev/normalization-witness/v1alpha1` owns normalization evidence;
+- `semwitness.dev/cache-hit-witness/v1alpha1` owns cache-admission evidence;
+- canonical JSON is a domain primitive, not a codec;
+- future versions evolve independently of `semwitness-bundle/*` and codec
+  versions.
+
+## Two caches, two different problems
+
+| Layer                      | Match semantics                                                         | What a hit saves                                                  | IntentWitness responsibility                                                                          |
+| -------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Provider prompt/KV cache   | Provider-defined common or exact request prefix                         | Repeated input prefill; the model still runs and generates output | Keep stable instructions/tools/templates first and expose provider usage metrics through adapters     |
+| Application semantic cache | Application-defined equivalence of a typed request and its dependencies | Potentially skips planning, tool execution, or generation         | Validate supplied Intent IR, enforce exact equality and hard gates, emit evidence, and measure safety |
+
+Intent normalization does not make a provider cache semantic. It can improve a
+provider cache only when the final provider request also becomes byte-stable in
+the provider's cacheable prefix. Provider policy remains external and
+provider-observed usage remains authoritative.
+
+## System flow
+
+```mermaid
+flowchart LR
+    A["Request + authoritative host context"] -. "future adapter" .-> C["Compiler and resolvers"]
+    C -. "proposes" .-> D["Caller-supplied Intent IR + evidence"]
+    D --> B["Boundary validation"]
+    B --> E["Strict Intent IR validation"]
+    E --> F["Canonical IR bytes + digest"]
+    F --> G["Optional caller candidate evidence"]
+    G --> H["Exact canonical IR comparison"]
+    H --> I["Scope, auth, freshness, policy, effect, dependency gates"]
+    I --> J["Tiered eligible / bypass decision"]
+    J --> K["Normalization + cache-hit witnesses"]
+    A --> L["Ordinary uncached execution"]
+    L --> M["Authoritative host-visible result"]
+    J -. "shadow comparison only" .-> M
+```
+
+The first dotted edge is future work; the second dotted edge is observational.
+The implemented increment starts at the caller-supplied IR boundary. The shadow
+core never returns a cache value or changes tool selection, execution, provider
+input, or user-visible output; every decision sets `applied: false`.
+
+## Bounded contexts and ports
+
+### Domain core
+
+- **Intent IR:** validated semantic identity of one request.
+- **Canonicalizer:** deterministic serialization and hashing owned by the Intent
+  IR contract, not the codec registry.
+- **Admission policy:** allowed operations, tiers, effects, freshness modes,
+  scopes, and dependency requirements.
+- **Normalization witness:** source, normalizer artifact/config, ontology,
+  policy, canonical IR digest, ambiguity/confidence assessment, optional
+  non-authoritative candidate evidence, and reason codes.
+- **Cache-hit witness:** exact bound-digest comparison, entry/lookup evidence,
+  every hard-gate result, tier decision, and reason codes.
+- **Tier binding:** domain-separated `plan`, `observation`, and `response`
+  records.
+
+### Target replaceable ports
+
+These are the next architecture boundary, not first-increment implementation
+claims. The current core accepts the already-produced Intent IR and digests.
+
+| Port                | Responsibility                                               | Fail-closed behavior                                                     |
+| ------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| `IntentCompiler`    | Produce a schema-shaped candidate from text and host context | Bypass on timeout, malformed output, unsupported operation, or ambiguity |
+| `OperationRegistry` | Resolve namespaced operations and their slot schemas         | Bypass unknown or version-skewed operations                              |
+| `EntityResolver`    | Resolve aliases to authoritative stable IDs                  | Bypass unresolved, conflicting, or unauthorized entities                 |
+| `TemporalResolver`  | Resolve relative time against an injected clock and timezone | Bypass absent reference time, timezone ambiguity, or invalid range       |
+| `ContextResolver`   | Bind pronouns/conversation references to immutable digests   | Bypass unresolved or mutable bindings                                    |
+| `CandidateIndex`    | Retrieve likely operation schemas or stored IR records       | Empty candidates on failure; never admit                                 |
+| `Authorizer`        | Attest current principal access to all bound resources       | Bypass missing, stale, or negative attestation                           |
+| `FreshnessResolver` | Attest TTL, source version, or immutable snapshot            | Bypass unknown or expired state                                          |
+| `PolicyEngine`      | Evaluate versioned organization/host policy                  | Bypass missing or unsupported policy                                     |
+| `TierStore`         | Read/write versioned cache records                           | Treat fault or malformed entry as miss/bypass                            |
+| `Clock`             | Supply deterministic evaluation and current admission time   | Bypass when required time evidence is unavailable                        |
+| `TelemetrySink`     | Record bounded counters and reason codes                     | Do not emit payload; sink failure cannot enable a hit                    |
+
+Configuration selects registered adapter IDs and bounded parameters. It cannot
+load arbitrary modules, execute scripts, or introduce unreviewed schemas.
+
+## Intent IR `v1alpha1`
+
+The IR contains only fields that participate in semantic identity or explicit
+output requirements. Operational evidence such as normalizer confidence and a
+preferably HMAC-keyed source digest belongs in the witness so it cannot
+accidentally fragment or merge semantic keys. `digestIntentSource` remains for
+transparent offline fixtures; exported evidence should use
+`hmacIntentSourceDigest`.
+
+Illustrative shape:
+
+```json
+{
+  "schema": "semwitness.dev/intent-ir/v1alpha1",
+  "ontology": {
+    "id": "example-ontology",
+    "version": "1.0.0",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "goal": {
+    "namespace": "knowledge",
+    "action": "explain",
+    "object": "redis",
+    "polarity": "affirm"
+  },
+  "slots": [{ "name": "audience", "value": "software-engineer" }],
+  "constraints": [
+    { "path": "version", "operator": "eq", "value": "latest-known" }
+  ],
+  "temporal": { "kind": "none" },
+  "output": {
+    "format": "markdown",
+    "locale": "it-IT",
+    "detail": "concise"
+  },
+  "effect": "read"
+}
+```
+
+The example is not the JSON Schema itself. The implementation schema must:
+
+- reject unknown top-level fields and unsupported versions;
+- bind an ontology ID, version, and digest;
+- represent goal namespace, action, object, and `affirm`/`negate` polarity;
+- require unique slot names and bounded, explicit constraints;
+- preserve the distinction between absent, `null`, empty, defaulted, and
+  caller-specified values;
+- represent temporal intent as `none`, `as-of`, or a UTC range;
+- represent output format, locale, and detail explicitly;
+- use only `read`, `write`, or `irreversible` effects;
+- prohibit NaN, infinity, duplicate keys, unpaired Unicode surrogates, and
+  implementation-dependent numeric coercion;
+- reject unknown fields and documents over configured bounds.
+
+The first increment does not insert semantic defaults or resolve aliases. The
+caller-provided normalizer and ontology bindings identify who proposed the IR;
+they do not grant cache authority.
+
+## Canonicalization and equality
+
+The core canonical JSON primitive produces deterministic UTF-8 JSON from a
+strictly validated IR. Slots and constraints are sorted deterministically;
+duplicate slot names and duplicate canonical constraints are rejected or
+deduplicated according to the declared `v1alpha1` contract. Numbers must be
+finite; NaN and infinity are invalid.
+
+Admission recomputes the canonical IR digest and requires exact equality among
+the normalization witness, lookup binding, and entry binding. This is an exact
+canonical identity check, not a similarity threshold. Cache-entry integrity is
+also recomputed before any eligible shadow decision.
+
+## Candidate generation is not admission
+
+The first increment accepts optional `embedding` or `similarity` evidence from
+the caller and records it as `authoritative: false`; it does not run a vector
+index. A future candidate adapter may use exact indexes, alias registries,
+embeddings, vector search, reranking, or a model to propose:
+
+- likely operation schemas before compilation;
+- entity aliases to resolve against authoritative registries;
+- existing cache records worth loading for comparison.
+
+Every proposal remains untrusted. A high similarity score, shared route, LLM
+"same meaning" judgment, or nearest neighbor cannot satisfy canonical equality
+or any hard gate. Adding, removing, or changing candidate evidence may affect
+future recall, but it cannot alter which pair is safe to admit once compared.
+
+## Admission algorithm
+
+For each tier, the first mechanical increment performs these steps in order:
+
+1. Strictly validate and canonicalize the caller-supplied Intent IR.
+2. Bind its digest to source, normalizer, ontology, and policy evidence.
+3. Require the normalizer artifact/config, normalization policy, and confidence
+   threshold to match the trusted current host contract; then bypass ambiguity
+   or confidence below that threshold.
+4. Strictly validate the cache entry and current lookup, then recompute entry
+   integrity.
+5. Require the exact canonical intent digest in witness, entry, and lookup.
+6. Require exact HMAC-bound cache namespace, tenant, principal, authorization,
+   and context scope.
+7. Require exact host policy, effect, tier, and every mandatory tier-specific
+   dependency digest.
+8. Require an unexpired TTL or an exact canonical revision set.
+9. Permit non-read effects only in the `plan` tier.
+10. Emit an eligible or bypass cache-hit witness with `applied: false`.
+
+The trusted host must obtain its current normalizer contract, scope,
+authorization, context, policy, clock, revision, and tier dependency bindings.
+Future ports will produce those bindings; the current core validates
+caller-supplied evidence and verifies exact equality/freshness, but does not call
+external systems itself.
+
+The default is bypass, not a low-confidence hit. Gate ordering may be optimized
+to avoid expensive work only if it preserves the same fail-closed result and
+does not expose cross-scope existence through timing or diagnostics.
+
+## Cache keys and dependency vectors
+
+The first increment ships no cache store, but it does validate the complete
+entry/lookup binding and provides `hmacCacheKey`. The helper serializes that
+binding deterministically and derives a deployment-keyed, domain-separated key:
+
+```text
+HMAC-SHA-256(
+  deployment_secret,
+  "semwitness.dev/intent-cache-key/v1\0" ||
+  canonical_cache_binding
+)
+```
+
+The result is namespaced as `hmac-sha256:cache-key:*`. It is a pseudonymous
+lookup key, not an authorization credential: every retrieved record still
+passes the full binding, integrity, effect, and freshness admission checks.
+A future `TierStore` should use this helper or pass an equivalent conformance
+fixture rather than define its own semantic equality rules.
+
+The canonical binding contains opaque digests, never display names or tokens:
+
+- tenant and application cache-scope digest;
+- authorization subject/scope digest and authorizer policy version;
+- normalizer artifact/config, normalization policy, and confidence threshold;
+- IntentWitness host policy digest;
+- effect class;
+- schema, compiler, resolver, ontology, and canonicalizer versions;
+- tier-specific dependencies.
+
+Tier-specific dependencies are:
+
+| Tier          | Required dependency bindings                                                                                         |
+| ------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `plan`        | Operation registry, planner contract, tool registry and schemas, host policy, authorization scope                    |
+| `observation` | Plan/execution digest, tool binding, data-source revision or TTL, authorization and context scope                    |
+| `response`    | Observation value, output contract, prompt/template, provider/model, determinism, personalization, and safety policy |
+
+Changing a dependency produces a miss or a new namespace. Wildcard versions and
+"latest" aliases are not valid key material.
+
+## Tier semantics
+
+### Plan
+
+A plan record contains a non-executable template: route, required capabilities,
+parameter schema, and declared preconditions. It never contains a bearer token,
+authorization decision to replay, or an instruction to skip confirmation.
+
+For a side-effecting request, only this template may eventually be reused. The
+host must freshly bind parameters, authorize, confirm when required, check
+preconditions, and execute. Shadow mode only compares it with the ordinary plan.
+
+### Observation / tool result
+
+An observation record is eligible only for the `read` effect. Its lookup and
+entry bind tool/execution digests plus either an exact revision set or explicit
+TTL evidence. Unknown freshness is stale. `write` and `irreversible` effects are
+structurally ineligible.
+
+### Response
+
+A response record additionally binds the exact observation value digest and
+output contract. Its schema accepts only trusted host attestations of
+`deterministic`, personalization `none`, and safety `cache-eligible`, together
+with their versioned digests. Unknown/material personalization, a required fresh
+safety decision, nondeterminism, or unbounded live data is invalid rather than
+an opaque digest that can accidentally pass. This is the last and strictest
+tier considered for active promotion.
+
+## Witnesses `v1alpha1`
+
+The current canonical witnesses record:
+
+- source request digest;
+- IR, normalization/cache-hit witness, normalizer artifact/config, ontology, and
+  policy versions or digests;
+- canonical IR digest, but not its sensitive values;
+- candidate source and score class, if used, labelled non-authoritative;
+- stored-record integrity and exact bound-digest comparison outcomes;
+- scope, authorization, context, freshness, effect, tool/execution, policy, and
+  tier bindings;
+- eligible or bypass decision, `applied: false`, and bounded reason codes.
+
+The witness proves which checks ran over identified artifacts. It does not prove
+that a free-form interpretation is universally correct or that a future answer
+would be identical.
+
+## Future provider adapters
+
+Provider adapters are measurement and request-layout boundaries, not semantic
+authorities. They may:
+
+- place stable system instructions, tools, schemas, and examples before dynamic
+  content;
+- select documented provider cache controls or keys;
+- capture cached-input, cache-write, uncached-input, output, latency, and cost
+  fields;
+- bind provider/model/prompt versions into response dependencies.
+
+They may not translate a provider cache hit into an IntentWitness semantic hit.
+Application-cache savings and provider-prefix savings are reported separately
+to avoid double counting.
+
+## Future shadow-host observability
+
+The core witnesses already expose bounded decisions and reason codes. A host
+adapter should aggregate the following counters without adding payloads:
+
+Required counters include:
+
+- requests, compilations, ambiguities, misses, would-hits, and bypasses by tier
+  and bounded reason code;
+- exact-source versus normalized-IR would-hits;
+- candidate recall and candidate rejection rate;
+- false hits, false misses, cross-tenant attempts, stale candidates, and
+  side-effect candidates;
+- ordinary-path and shadow-path latency, tokens, provider cache reads/writes,
+  tool calls, and estimated cost;
+- invalidations and version-skew bypasses.
+
+Payloads, raw IR fields, tenant names, principals, prompts, responses, tool
+results, paths, and secrets are excluded. High-cardinality identifiers are
+opaque, keyed digests when equality telemetry is necessary.
+
+## Validation strategy
+
+- **Schema/property:** canonical determinism, unknown-field rejection, no
+  numeric or Unicode ambiguity, tier domain separation.
+- **Metamorphic:** positive paraphrases preserve canonical IR; a one-slot change
+  changes IR or bypasses; changing embeddings cannot override hard gates.
+- **Adversarial:** negation, quantifiers, units, relative time, coreference,
+  injected fields, cache poisoning, tenant/auth drift, stale sources, schema
+  downgrade, and compromised records.
+- **Differential:** compare raw exact cache, embedding threshold, IR-only, and
+  full admission on held-out semantic families.
+- **Shadow:** compare every would-hit artifact with independently executed work
+  and calculate predeclared one-sided false-hit bounds.
+
+No active tier is justified by hit rate alone. Safety bounds, zero prohibited
+hits, task-quality non-regression, and positive net savings after every added
+step are all required.
