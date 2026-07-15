@@ -5,17 +5,19 @@ _Shadow MVP design baseline — 2026-07-15_
 ## Outcome
 
 IntentWitness asks whether previously observed work has the _same canonical
-intent and the same answer-affecting authority and state_. In the first
-mechanical increment, the caller supplies the proposed typed Intent IR and its
-normalization evidence. The core validates and canonicalizes it. Normalizer Lab
-now adds a deliberately narrow exact-alias compiler and an authoritative
-operation registry; general natural-language compilation and entity resolution
-remain target adapters, not implemented claims. Different wording can converge
-on one cache identity, but semantic similarity alone can never authorize reuse.
+intent and the same answer-affecting authority and state_. Callers may supply an
+already-produced Intent IR, use the deterministic exact-alias compiler, select
+the optional OpenAI-compatible proposal compiler, or compose two to eight
+distinct-manifest compilers with `ConsensusIntentCompiler`. Every compiler can
+propose only an operation ID; the trusted registry owns Intent IR and effect.
+Entity, unit, temporal, and coreference resolution remain future host adapters.
+Different wording can converge on one cache identity, but compiler agreement or
+semantic similarity alone can never authorize reuse.
 
-The first implementation remains inside SemWitness as an isolated bounded
-context. It reuses composition, evidence, and replay conventions, but it is not
-a compression codec:
+IntentWitness deliberately remains inside SemWitness as an isolated bounded
+context. It reuses canonical evidence, privacy, and evaluation conventions
+without becoming a compression codec. A repository split remains conditional
+on independently diverging runtime, governance, adoption, or release cadence:
 
 - `semwitness.dev/intent-ir/v1alpha1` owns the proposed intent contract;
 - `semwitness.dev/normalization-witness/v1alpha1` owns normalization evidence;
@@ -40,7 +42,7 @@ provider-observed usage remains authoritative.
 
 ```mermaid
 flowchart LR
-    A["Request + authoritative host context"] --> C["Candidate compiler"]
+    A["Request + authoritative host context"] --> C["Exact, OpenAI-compatible, or consensus compiler"]
     C -. "operation ID" .-> R["Authoritative operation registry"]
     R --> D["Caller-supplied or registry-owned Intent IR + evidence"]
     D --> B["Boundary validation"]
@@ -56,11 +58,12 @@ flowchart LR
     J -. "shadow comparison only" .-> M
 ```
 
-The built-in compiler implements only explicitly configured exact aliases; the
-general compiler/resolver path remains future work. The final dotted edge is
-observational. The shadow core never returns a cache value or changes tool
-selection, execution, provider input, or user-visible output; every decision
-sets `applied: false`.
+The exact-alias compiler remains the offline default. The optional remote
+compiler sends selected source text to its configured provider only after
+explicit network opt-in; it still returns only an operation proposal. The final
+dotted edge is observational. The shadow core never returns a cache value or
+changes tool selection, execution, provider input for the host's ordinary path,
+or user-visible output; every decision sets `applied: false`.
 
 ## Bounded contexts and ports
 
@@ -81,25 +84,26 @@ sets `applied: false`.
 
 ### Replaceable ports
 
-Normalizer Lab implements the candidate compiler and operation-registry
-boundaries with a deterministic exact-alias adapter. The remaining ports are
-future host boundaries. The original API continues to accept already-produced
-Intent IR and digests.
+Normalizer Lab implements the candidate compiler boundary with deterministic
+exact aliases, an optional OpenAI-compatible adapter, and an all-agree consensus
+wrapper. The operation registry remains authoritative. The remaining ports are
+future host boundaries, and the original API continues to accept
+already-produced Intent IR and digests.
 
-| Port                | Responsibility                                               | Fail-closed behavior                                                     |
-| ------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| `IntentCompiler`    | Propose an operation from text and host context              | Bypass on timeout, malformed output, unsupported operation, or ambiguity |
-| `OperationRegistry` | Resolve namespaced operations and their slot schemas         | Bypass unknown or version-skewed operations                              |
-| `EntityResolver`    | Resolve aliases to authoritative stable IDs                  | Bypass unresolved, conflicting, or unauthorized entities                 |
-| `TemporalResolver`  | Resolve relative time against an injected clock and timezone | Bypass absent reference time, timezone ambiguity, or invalid range       |
-| `ContextResolver`   | Bind pronouns/conversation references to immutable digests   | Bypass unresolved or mutable bindings                                    |
-| `CandidateIndex`    | Retrieve likely operation schemas or stored IR records       | Empty candidates on failure; never admit                                 |
-| `Authorizer`        | Attest current principal access to all bound resources       | Bypass missing, stale, or negative attestation                           |
-| `FreshnessResolver` | Attest TTL, source version, or immutable snapshot            | Bypass unknown or expired state                                          |
-| `PolicyEngine`      | Evaluate versioned organization/host policy                  | Bypass missing or unsupported policy                                     |
-| `TierStore`         | Read/write versioned cache records                           | Treat fault or malformed entry as miss/bypass                            |
-| `Clock`             | Supply deterministic evaluation and current admission time   | Bypass when required time evidence is unavailable                        |
-| `TelemetrySink`     | Record bounded counters and reason codes                     | Do not emit payload; sink failure cannot enable a hit                    |
+| Port                | Responsibility                                               | Fail-closed behavior                                                                                    |
+| ------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `IntentCompiler`    | Propose an operation from text and host context              | Bypass on abort, timeout, malformed output, unsupported operation, ambiguity, or consensus disagreement |
+| `OperationRegistry` | Resolve namespaced operations and their slot schemas         | Bypass unknown or version-skewed operations                                                             |
+| `EntityResolver`    | Resolve aliases to authoritative stable IDs                  | Bypass unresolved, conflicting, or unauthorized entities                                                |
+| `TemporalResolver`  | Resolve relative time against an injected clock and timezone | Bypass absent reference time, timezone ambiguity, or invalid range                                      |
+| `ContextResolver`   | Bind pronouns/conversation references to immutable digests   | Bypass unresolved or mutable bindings                                                                   |
+| `CandidateIndex`    | Retrieve likely operation schemas or stored IR records       | Empty candidates on failure; never admit                                                                |
+| `Authorizer`        | Attest current principal access to all bound resources       | Bypass missing, stale, or negative attestation                                                          |
+| `FreshnessResolver` | Attest TTL, source version, or immutable snapshot            | Bypass unknown or expired state                                                                         |
+| `PolicyEngine`      | Evaluate versioned organization/host policy                  | Bypass missing or unsupported policy                                                                    |
+| `TierStore`         | Read/write versioned cache records                           | Treat fault or malformed entry as miss/bypass                                                           |
+| `Clock`             | Supply deterministic evaluation and current admission time   | Bypass when required time evidence is unavailable                                                       |
+| `TelemetrySink`     | Record bounded counters and reason codes                     | Do not emit payload; sink failure cannot enable a hit                                                   |
 
 Configuration selects registered adapter IDs and bounded parameters. It cannot
 load arbitrary modules, execute scripts, or introduce unreviewed schemas.
@@ -158,10 +162,12 @@ The example is not the JSON Schema itself. The implementation schema must:
   implementation-dependent numeric coercion;
 - reject unknown fields and documents over configured bounds.
 
-The core does not insert semantic defaults. Normalizer Lab can resolve only
-explicitly configured exact aliases to registry-owned frames; it does not infer
-entities, units, dates, coreference, or missing values. Normalizer and ontology
-bindings identify who proposed the IR; they do not grant cache authority.
+The core does not insert semantic defaults. The exact-alias baseline resolves
+only explicitly configured aliases; remote and consensus compilers still
+propose operation IDs and cannot write registry-owned frame fields. No current
+compiler resolves entities, units, dates, coreference, or missing values.
+Normalizer and ontology bindings identify who proposed the IR; they do not grant
+cache authority.
 
 ## Canonicalization and equality
 
@@ -180,9 +186,10 @@ also recomputed before any eligible shadow decision.
 
 The core accepts optional `embedding` or `similarity` evidence from the caller
 and records it as `authoritative: false`; it does not run a vector index.
-Normalizer Lab's exact-alias adapter emits no such evidence. A future candidate
-adapter may use exact indexes, alias registries,
-embeddings, vector search, reranking, or a model to propose:
+Normalizer Lab's exact-alias adapter emits no such evidence. The implemented
+OpenAI-compatible adapter uses a model to propose one registry operation; future
+candidate adapters may use exact indexes, alias registries, embeddings, vector
+search, or reranking to propose:
 
 - likely operation schemas before compilation;
 - entity aliases to resolve against authoritative registries;
@@ -192,6 +199,29 @@ Every proposal remains untrusted. A high similarity score, shared route, LLM
 "same meaning" judgment, or nearest neighbor cannot satisfy canonical equality
 or any hard gate. Adding, removing, or changing candidate evidence may affect
 future recall, but it cannot alter which pair is safe to admit once compared.
+
+The remote adapter is exported from
+`semwitness/intent/openai-compatible`. Its strict registry is host-owned and
+contains the only authoritative Intent IR/effect mapping. The adapter binds its
+provider/model configuration, registry, prompt template, strict output schema,
+and execution policy into deterministic digests. It disables retries, tools,
+and telemetry; accepts credentials only through a configured `SEMWITNESS_*`
+environment-variable name; and uses a bounded transport restricted to one
+origin and resolved `chat/completions` path, HTTPS except localhost or literal
+loopback HTTP, manual redirect rejection, deadline/abort propagation, and
+declared plus streamed response-size limits. A digest-bound `maxPromptBytes`
+policy also caps the combined system instructions, operation catalog, locale,
+and source text before credential resolution or network access. Provider
+refusal, warnings, extra content, unknown operations, or malformed output bypass
+without returning raw provider errors.
+
+`ConsensusIntentCompiler`, exported from `semwitness/intent`, composes two to
+eight compilers that have distinct manifests and the exact same ontology. Its
+`all-agree` policy requires every member to return one valid, unambiguous
+proposal for the same operation. Confidence is the minimum member confidence;
+candidate evidence is deterministically combined within a configured bound.
+Any member bypass, failure, malformed output, abort, or disagreement fails
+closed. Consensus is additional candidate evidence, not semantic proof.
 
 ## Admission algorithm
 
@@ -311,10 +341,11 @@ The witness proves which checks ran over identified artifacts. It does not prove
 that a free-form interpretation is universally correct or that a future answer
 would be identical.
 
-## Future provider adapters
+## Provider boundaries
 
-Provider adapters are measurement and request-layout boundaries, not semantic
-authorities. They may:
+The implemented OpenAI-compatible candidate compiler is a request-layout
+boundary, not a semantic authority. Future provider-cache measurement adapters
+may additionally:
 
 - place stable system instructions, tools, schemas, and examples before dynamic
   content;
@@ -326,6 +357,12 @@ authorities. They may:
 They may not translate a provider cache hit into an IntentWitness semantic hit.
 Application-cache savings and provider-prefix savings are reported separately
 to avoid double counting.
+
+The Codex plugin can invoke these explicit evaluations but cannot transparently
+replace Codex prompts or tool traffic. Actual ingress savings require an SDK or
+App Server integration, or an OpenAI-compatible gateway, that deliberately
+applies a separately admitted transformation before the model request. Shadow
+evaluation itself never authorizes or serves a cached artifact.
 
 ## Future shadow-host observability
 

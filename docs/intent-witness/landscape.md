@@ -45,23 +45,50 @@ provider-prefix savings must be measured separately to avoid double counting.
 
 ## Application semantic caching and routing
 
-| Project                                                                               | What its primary documentation establishes                                                                                                                                                                                                                                                                   | Gap tested by IntentWitness                                                                                                                                                                                                |
-| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [RedisVL `SemanticCache`](https://redis.io/docs/latest/develop/ai/redisvl/api/cache/) | Retrieves cached LLM responses using prompt/vector similarity, a configurable distance threshold, TTL, and optional filters. Redis also documents semantic caching of LLM responses and tool results.                                                                                                        | Use RedisVL as a possible `CandidateIndex` or `TierStore`, not as the admission authority. A distance threshold proposes a candidate; exact canonical IR, scope/auth/freshness/policy/effect, and dependency gates decide. |
-| [GPTCache](https://github.com/zilliztech/GPTCache)                                    | Provides modular adapters, embeddings, vector stores, similarity evaluators, storage, and exact or semantic cache paths; its README explicitly acknowledges false positives and false negatives. The repository also states it no longer adds new model/API adapters and recommends its generic get/set API. | Reuse its architectural lessons, but test a stricter typed admission contract and uncertainty bound instead of treating similarity evaluation as sufficient to return a response.                                          |
-| [Semantic Router](https://github.com/aurelio-labs/semantic-router)                    | Uses vector-space similarity to choose predefined routes and can return no route when no match exists. It is a fast decision layer for tool/agent routing, not primarily an answer cache.                                                                                                                    | It can inspire or implement operation candidate generation. Route equality alone does not establish identical arguments, authority, freshness, effects, dependencies, or reusable output.                                  |
+| Project                                                                               | What its primary documentation establishes                                                                                                                                                                                                                                                                   | Gap tested by IntentWitness                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [RedisVL `SemanticCache`](https://redis.io/docs/latest/develop/ai/redisvl/api/cache/) | Retrieves cached LLM responses using prompt/vector similarity, a configurable distance threshold, TTL, and optional filters. Redis also documents semantic caching of LLM responses and tool results.                                                                                                        | Use RedisVL as a possible `CandidateIndex` or `TierStore`, not as the admission authority. A distance threshold proposes a candidate; exact canonical IR, scope/auth/freshness/policy/effect, and dependency gates decide.    |
+| [LiteLLM](https://docs.litellm.ai/)                                                   | Exposes an OpenAI-compatible gateway across many providers with routing, retries, budget controls, and per-project caching. Its [cache layer](https://docs.litellm.ai/docs/proxy/caching) includes exact and semantic backends.                                                                              | Treat it as a deployment gateway and cache backend integration point. IntentWitness should provide a pre-request compiler/admission plugin or sidecar, not reimplement provider translation, retries, accounting, or tenancy. |
+| [vLLM Semantic Router](https://github.com/vllm-project/semantic-router)               | Provides system-level model, adapter, and tool routing plus domain-aware semantic caching and prompt/security controls for OpenAI-compatible traffic.                                                                                                                                                        | Use it as a high-performance candidate router and production baseline. Its route or similarity result still cannot replace exact typed arguments, effect, authority, freshness, and dependency verification.                  |
+| [GPTCache](https://github.com/zilliztech/GPTCache)                                    | Provides modular adapters, embeddings, vector stores, similarity evaluators, storage, and exact or semantic cache paths; its README explicitly acknowledges false positives and false negatives. The repository also states it no longer adds new model/API adapters and recommends its generic get/set API. | Reuse its architectural lessons, but test a stricter typed admission contract and uncertainty bound instead of treating similarity evaluation as sufficient to return a response.                                             |
+| [Semantic Router](https://github.com/aurelio-labs/semantic-router)                    | Uses vector-space similarity to choose predefined routes and can return no route when no match exists. It is a fast decision layer for tool/agent routing, not primarily an answer cache.                                                                                                                    | It can inspire or implement operation candidate generation. Route equality alone does not establish identical arguments, authority, freshness, effects, dependencies, or reusable output.                                     |
 
 The reviewed systems are valuable adapters and baselines, not targets to clone.
 IntentWitness should integrate established vector stores and routers through
 ports instead of implementing another vector database or embedding framework.
 
+## Closest 2026 research baselines
+
+Three current preprints make the research boundary narrower and more useful:
+
+- [W5H2 Intent Cache](https://arxiv.org/abs/2602.18922) treats cache-key
+  evaluation as a clustering problem and decomposes requests into structured
+  intent dimensions. It also introduces NyayaBench v2, a multilingual agentic
+  corpus. This is the closest baseline for compiler accuracy, key consistency,
+  and selective prediction; IntentWitness must compare against it rather than
+  claim structured intent as novel by itself.
+- [OLAP Intent Signature](https://arxiv.org/abs/2602.19811) canonicalizes SQL
+  and natural language into one strict domain key and admits exact-intent hits
+  after schema validation. It is strong evidence for the domain-specific
+  pattern, while IntentWitness tests a provider-neutral operation registry,
+  security/freshness bindings, tiered artifacts, and replayable witnesses.
+- [FreshCache](https://arxiv.org/abs/2607.04281) treats freshness as a bounded
+  risk decision for open-web RAG. Its temporal model is complementary to, and a
+  future baseline for, the host-supplied freshness gate; semantic equivalence
+  alone still cannot establish that cached evidence is current.
+
+These are recent preprints, not independently replicated product guarantees.
+The shadow corpus must report its own precision, false-merge, repeatability,
+latency, and cost evidence instead of transferring their headline results.
+
 ## Why typed normalization changes the cache model
 
 An embedding cache asks whether two texts are close in a learned vector space.
 IntentWitness asks whether a versioned normalizer resolved both requests to the
-same explicit goal and answer-affecting slots. The first increment accepts that
-candidate IR and its evidence from the caller; it does not yet implement the
-normalizer.
+same explicit goal and answer-affecting slots. The core accepts a candidate IR
+and evidence from the caller; Normalizer Lab now also implements exact-alias,
+OpenAI-compatible, and all-agree consensus compiler seams that may propose only
+a trusted registry operation ID.
 
 For example:
 
@@ -72,10 +99,10 @@ For example:
 | "Prezzo BTC adesso" / "Prezzo BTC ieri alle 12"                    | High                  | Different absolute temporal constraints and source snapshots; no stale reuse                                 |
 | "Mostra i miei ticket" for users A and B                           | Nearly identical text | Separate tenant/principal scope; cross-user artifact reuse prohibited                                        |
 
-A future normalizer therefore needs an ontology/operation registry, entity and
-temporal resolution, explicit output contract, effect classification, and
-immutable context bindings. Embeddings improve recall before that boundary;
-they do not weaken it.
+The implemented normalization layer therefore uses an ontology/operation
+registry with an explicit output contract and effect classification. Entity,
+temporal, and context resolvers remain future host boundaries. Embeddings may
+improve candidate recall before that boundary; they do not weaken it.
 
 ## Competitive posture
 
@@ -92,8 +119,8 @@ Position it as:
 > A provider-neutral admission and evidence layer that verifies a versioned
 > Intent IR, exact semantic-key equality, and host-supplied current
 > security/freshness bindings, then evaluates tiered agent-cache reuse before
-> production. Replaceable
-> normalizers are the next layer, not an MVP overclaim.
+> production. Exact, remote, and consensus compilers remain replaceable
+> candidate generators; none is cache authority.
 
 The strongest initial customer surface is likely agent infrastructure rather
 than generic chat: repeated routing, planning, read-only tool calls, and
@@ -114,6 +141,36 @@ last.
 | Authorization and freshness           | Call host-owned authoritative systems on every read; do not recreate identity or source-of-truth systems     |
 | Provider prefix caching               | Thin measurement/layout adapters only; follow each provider's official semantics                             |
 | Statistical evaluation                | Build a project-specific replay and promotion harness because safety claims depend on the exact IR and gates |
+
+## Codex integration boundary
+
+The current Codex plugin and hook surfaces are useful for distribution,
+evaluation, warnings, and policy enforcement, but they are not a transparent
+prompt-replacement proxy. In particular, the documented
+[`UserPromptSubmit` hook](https://learn.chatgpt.com/docs/hooks) can run a command
+and stop or warn on a turn, but its current output contract exposes no field
+that replaces the submitted user input. A post-turn analyzer also cannot save
+tokens that the model has already consumed or generated.
+
+Therefore the integration should be layered:
+
+1. **Codex plugin, shadow mode:** package the corpus evaluator, diagnostics,
+   policy checks, and an explicit normalize/preview workflow. Never claim token
+   savings from passive observation.
+2. **Codex SDK or App Server wrapper:** normalize before sending `turn/start`
+   input, preserve the original digest in the witness, and fall back to the
+   original source on every ambiguity or failure. This is the first Codex path
+   that can measure actual ingress savings because the client owns the turn
+   input. See the official [SDK](https://learn.chatgpt.com/docs/codex-sdk) and
+   [App Server](https://learn.chatgpt.com/docs/app-server) interfaces.
+3. **OpenAI-compatible gateway:** expose the same compiler/admission ports in
+   front of Codex SDK applications, LiteLLM, vLLM, Ollama, or other compatible
+   runtimes. Keep provider credentials and transport behavior outside the
+   canonical Intent IR.
+
+Output compression remains a separate SemWitness codec concern. It can reduce
+stored or forwarded artifacts only when the receiving boundary verifies and
+decodes them; it cannot retroactively reduce model output billing.
 
 ## Validation questions before a repository split
 
