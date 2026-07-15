@@ -1,0 +1,37 @@
+{
+  "name": "semwitness",
+  "version": "0.1.0",
+  "description": "Proof-carrying semantic compression for AI-agent context, operated explicitly in shadow mode.",
+  "author": {
+    "name": "Antonio Antenore",
+    "email": "50747458+aantenore@users.noreply.github.com",
+    "url": "https://github.com/aantenore"
+  },
+  "homepage": "https://github.com/aantenore/semwitness#readme",
+  "repository": "https://github.com/aantenore/semwitness",
+  "license": "Apache-2.0",
+  "keywords": [
+    "agentic-ai",
+    "context-compression",
+    "llm",
+    "semantic-codec",
+    "token-optimization",
+    "verification"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "SemWitness",
+    "shortDescription": "Measure and verify semantic compression before using it.",
+    "longDescription": "SemWitness analyzes context, simulates deterministic compression, verifies proof bundles, and measures net token savings without claiming transparent prompt or response interception.",
+    "developerName": "Antonio Antenore",
+    "category": "Developer Tools",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "websiteURL": "https://github.com/aantenore/semwitness",
+    "defaultPrompt": [
+      "Analyze this context for safe token savings with SemWitness.",
+      "Simulate compression and verify the resulting proof bundle.",
+      "Replay this fixture and compare its measured token cost."
+    ],
+    "brandColor": "#0F766E"
+  }
+}

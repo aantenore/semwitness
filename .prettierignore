@@ -1,0 +1,3 @@
+examples/*.jsonl
+plugins/semwitness/dist/
+pnpm-lock.yaml
