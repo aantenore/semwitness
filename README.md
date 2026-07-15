@@ -150,7 +150,7 @@ After the public repository is published with its committed plugin bundle, use
 the versioned release ref for a reproducible installation:
 
 ```bash
-codex plugin marketplace add aantenore/semwitness --ref v0.1.0
+codex plugin marketplace add aantenore/semwitness --ref v0.1.1
 codex plugin add semwitness@semwitness-local --json
 ```
 
