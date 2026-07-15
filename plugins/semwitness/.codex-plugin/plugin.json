@@ -1,6 +1,6 @@
 {
   "name": "semwitness",
-  "version": "0.1.1",
+  "version": "0.2.0-alpha.1",
   "description": "Proof-carrying semantic compression for AI-agent context, operated explicitly in shadow mode.",
   "author": {
     "name": "Antonio Antenore",
