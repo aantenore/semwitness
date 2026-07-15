@@ -6,9 +6,11 @@ _Shadow MVP design baseline — 2026-07-15_
 
 IntentWitness's first mechanical increment validates a caller-supplied canonical
 Intent IR candidate, examines caller-supplied tier bindings, and emits
-normalization and cache-hit witnesses. Natural-language compilation, entity
-resolution, vector lookup, and authoritative host adapters are future work. The
-core does not serve cache values, and every MVP decision sets `applied: false`.
+normalization and cache-hit witnesses. Normalizer Lab additionally implements a
+bounded exact-alias compiler plus authoritative operation registry. General
+natural-language compilation, entity resolution, vector lookup, and
+authoritative host adapters remain future work. The core does not serve cache
+values, and every MVP decision sets `applied: false`.
 
 The primary security objective is to prevent a semantic collision, stale state,
 authorization drift, tenant confusion, or side-effect replay from being
@@ -31,12 +33,13 @@ gate.
 
 1. **User to host:** free-form text and attached content are untrusted. Text that
    claims a tenant, permission, time, effect, or schema has no authority.
-2. **Host/caller to IR validator:** the IR candidate, normalizer assessment, and
-   all scope/dependency digests are untrusted until strict validation and exact
-   comparison succeed. The first increment does not derive them from text.
-3. **Future compiler/resolvers to IR validator:** proposed goals, slots,
-   entities, defaults, and confidence remain untrusted even after those adapters
-   exist.
+2. **Host/caller to compiler and IR validator:** source text, proposed operation,
+   IR candidate, normalizer assessment, and all scope/dependency digests are
+   untrusted until registry resolution, strict validation, and exact comparison
+   succeed.
+3. **Compiler/resolvers to operation registry and IR validator:** the built-in
+   compiler can propose only a configured operation ID. Future proposed goals,
+   slots, entities, defaults, and confidence remain untrusted.
 4. **Candidate evidence to admission:** embeddings, similarity scores, and
    neighbors are hints supplied as `authoritative: false`. They cannot grant
    equality or authorization.
@@ -109,10 +112,10 @@ gate.
 | Cross-tenant leakage              | Similar prompts retrieve another tenant's plan, data, or answer                                   | Tenant/application scope in key and pre-query partition; exact post-read check; opaque diagnostics; isolation tests                            | Shared physical infrastructure still needs backend access control and operational hardening                                                                    |
 | Authorization drift               | Permission is revoked after cache write or a prior user's authorization is replayed               | Host derives a fresh authorization scope; entry and lookup require an exact domain-separated HMAC digest; never cache bearer tokens            | Authorizer compromise or delayed revocation remains upstream risk                                                                                              |
 | Side-effect replay                | Cached observation/response is mistaken for successful execution, or an action runs twice         | Structural ineligibility of observation/response for `write` and `irreversible`; plans are non-executable; fresh confirmation/auth/execution   | A malicious host can ignore the contract; active integrations require conformance tests                                                                        |
-| Effect misclassification          | A write, message, payment, or external call is labelled `read`                                    | Strict `read`/`write`/`irreversible` enum; non-read only allowed for `plan`; future registry/host tool-schema cross-check                      | Incorrect caller-supplied effect metadata can still be dangerous until an authoritative host adapter owns it                                                   |
+| Effect misclassification          | A write, message, payment, or external call is labelled `read`                                    | Strict `read`/`write`/`irreversible` enum; Normalizer Lab keeps effect in the trusted operation registry; non-read only allowed for `plan`     | Incorrect registry metadata can still be dangerous until a host tool-schema cross-check owns it                                                                |
 | Personalized response leak        | A general-looking request returns another user's personalized answer                              | Principal/personalization policy in dependency vector; response ineligible by default when personalization is material                         | Hidden personalization in downstream systems can be missed without inventory                                                                                   |
 | Stochastic/safety-sensitive reuse | A cached response bypasses a fresh safety policy or materially different model behavior           | Response tier last; bind safety, prompt, model, and output contracts; mark safety-sensitive operations ineligible                              | Model/provider internals can change without a visible version                                                                                                  |
-| Prompt injection into compiler    | Request text instructs a future compiler to forge goal, tenant, policy, or witness fields         | First increment does not compile text; future adapters treat text as data, validate structure, and take authority only out-of-band             | A future model can still misparse adversarial language, which must bypass or be found in shadow evaluation                                                     |
+| Prompt injection into compiler    | Request text instructs a compiler to forge goal, tenant, policy, or witness fields                | Exact-alias baseline treats text only as a lookup key and returns an operation ID; authority stays in registry/host; future adapters are gated | A future model can still misparse adversarial language, which must bypass or be found in shadow evaluation                                                     |
 | Cache poisoning                   | Attacker writes crafted IR/response pairs or manipulates labels to create future hits             | Recompute canonical and entry digests; exact bound comparisons; isolated shadow namespace; future authenticated store; poisoning tests         | Compromised trusted writers or evaluation maintainers can poison data                                                                                          |
 | Embedding/index poisoning         | Neighbor manipulation steers requests toward an unsafe candidate                                  | Candidate evidence is explicitly non-authoritative; exact intent and all binding gates still apply; future indexes bound candidate count       | Poisoning can cause denial of service or lower recall even when it cannot admit a hit                                                                          |
 | Compiler nondeterminism           | Same request produces different IRs or paraphrases drift across model releases                    | Pin compiler/model/prompt/decoding/schema versions; deterministic adapters first; namespace changes; repeatability tests                       | Hosted model implementations can drift behind an unchanged label                                                                                               |

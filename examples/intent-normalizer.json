@@ -1,0 +1,74 @@
+{
+  "schema": "semwitness.dev/intent-operation-registry/v1alpha1",
+  "ontology": {
+    "id": "assistant-intents",
+    "version": "1.0.0",
+    "digest": "sha256:23b6aa1b8dda56f445305fffbb0ab10f8ea4d37e9d0556c8342347e0afc4d0d3"
+  },
+  "minimumConfidencePpm": 950000,
+  "operations": [
+    {
+      "id": "explain-redis-configuration",
+      "aliases": [
+        {
+          "locale": "it-IT",
+          "text": "Spiegami come configurare Redis"
+        },
+        {
+          "locale": "it-IT",
+          "text": "Come si configura Redis?"
+        }
+      ],
+      "intent": {
+        "schema": "semwitness.dev/intent-ir/v1alpha1",
+        "ontology": {
+          "id": "assistant-intents",
+          "version": "1.0.0",
+          "digest": "sha256:23b6aa1b8dda56f445305fffbb0ab10f8ea4d37e9d0556c8342347e0afc4d0d3"
+        },
+        "goal": {
+          "namespace": "knowledge",
+          "action": "explain",
+          "object": "redis-configuration",
+          "polarity": "affirm"
+        },
+        "slots": [],
+        "constraints": [],
+        "temporal": { "kind": "none" },
+        "output": {
+          "format": "markdown",
+          "locale": "it-IT",
+          "detail": "concise"
+        },
+        "effect": "read"
+      }
+    },
+    {
+      "id": "disable-redis",
+      "aliases": [{ "locale": "it-IT", "text": "Disabilita Redis" }],
+      "intent": {
+        "schema": "semwitness.dev/intent-ir/v1alpha1",
+        "ontology": {
+          "id": "assistant-intents",
+          "version": "1.0.0",
+          "digest": "sha256:23b6aa1b8dda56f445305fffbb0ab10f8ea4d37e9d0556c8342347e0afc4d0d3"
+        },
+        "goal": {
+          "namespace": "knowledge",
+          "action": "disable",
+          "object": "redis-configuration",
+          "polarity": "affirm"
+        },
+        "slots": [],
+        "constraints": [],
+        "temporal": { "kind": "none" },
+        "output": {
+          "format": "markdown",
+          "locale": "it-IT",
+          "detail": "concise"
+        },
+        "effect": "write"
+      }
+    }
+  ]
+}

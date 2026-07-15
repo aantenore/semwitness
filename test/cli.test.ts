@@ -5,12 +5,17 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { canonicalJson, toJsonValue } from '../src/domain/canonical-json.js';
-import { hashCanonical } from '../src/domain/hash.js';
+import { hashCanonical, sha256 } from '../src/domain/hash.js';
 import {
   parseSimulationBundle,
   type SimulationBundle,
 } from '../src/entrypoints/bundle.js';
 import { runCli } from '../src/entrypoints/cli.js';
+import {
+  INTENT_EVALUATION_FIXTURE_SCHEMA,
+  INTENT_OPERATION_REGISTRY_SCHEMA,
+  INTENT_SCHEMA,
+} from '../src/intent/index.js';
 
 type DeepMutable<T> = T extends readonly (infer Item)[]
   ? DeepMutable<Item>[]
@@ -317,6 +322,172 @@ describe('CLI retrieval and stable errors', () => {
       stdout: '',
       stderr:
         '{"error":{"message":"Command input or serialized data is invalid","reason":"MALFORMED_ENVELOPE"},"ok":false,"schema":"semwitness.dev/cli-error/v1alpha1"}\n',
+    });
+  });
+});
+
+describe('CLI intent normalizer evaluation', () => {
+  it('evaluates offline without exposing source or IntentIR payloads', async () => {
+    const root = await temporaryRoot();
+    const normalizerPath = join(root, 'normalizer.json');
+    const fixturePath = join(root, 'intent-eval.jsonl');
+    const source = 'CLI_INTENT_SOURCE_SENTINEL_8d06ba';
+    const ontology = {
+      id: 'cli-intents',
+      version: '1.0.0',
+      digest: sha256('cli-intents-v1'),
+    };
+    const intent = {
+      schema: INTENT_SCHEMA,
+      ontology,
+      goal: {
+        namespace: 'knowledge',
+        action: 'explain',
+        object: 'private-cli-object',
+        polarity: 'affirm',
+      },
+      slots: [],
+      constraints: [],
+      temporal: { kind: 'none' },
+      output: { format: 'markdown', locale: 'it-IT', detail: 'concise' },
+      effect: 'read',
+    };
+    await writeFile(
+      normalizerPath,
+      JSON.stringify({
+        schema: INTENT_OPERATION_REGISTRY_SCHEMA,
+        ontology,
+        minimumConfidencePpm: 950_000,
+        operations: [
+          {
+            id: 'explain-private-cli-object',
+            aliases: [{ locale: 'it-IT', text: source }],
+            intent,
+          },
+        ],
+      }),
+    );
+    await writeFile(
+      fixturePath,
+      `${JSON.stringify({
+        schema: INTENT_EVALUATION_FIXTURE_SCHEMA,
+        kind: 'case',
+        id: 'cli-case',
+        familyId: 'cli-family',
+        split: 'conformance',
+        difficulty: 'simple',
+        phenomena: ['paraphrase'],
+        input: { source, locale: 'it-IT' },
+        expect: { kind: 'intent', intent },
+      })}\n`,
+    );
+
+    const result = await invoke(
+      'intent',
+      'evaluate',
+      '--normalizer',
+      normalizerPath,
+      '--fixture',
+      fixturePath,
+      '--runs',
+      '2',
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      schema: 'semwitness.dev/intent-normalizer-eval-report/v1alpha1',
+      mode: 'shadow',
+      activeCacheQualified: false,
+      gate: { passed: true, reasons: [] },
+      caseMetrics: { total: 1, passed: 1 },
+    });
+    expect(result.stdout).not.toContain(source);
+    expect(result.stdout).not.toContain('private-cli-object');
+  });
+
+  it('uses exit two for a completed failed gate and exit one for malformed config', async () => {
+    const root = await temporaryRoot();
+    const normalizerPath = join(root, 'normalizer.json');
+    const fixturePath = join(root, 'intent-eval.jsonl');
+    const ontology = {
+      id: 'cli-intents',
+      version: '1.0.0',
+      digest: sha256('cli-intents-v1'),
+    };
+    const intent = {
+      schema: INTENT_SCHEMA,
+      ontology,
+      goal: {
+        namespace: 'knowledge',
+        action: 'explain',
+        object: 'redis',
+        polarity: 'affirm',
+      },
+      slots: [],
+      constraints: [],
+      temporal: { kind: 'none' },
+      output: { format: 'markdown', locale: 'it-IT', detail: 'concise' },
+      effect: 'read',
+    };
+    const registry = {
+      schema: INTENT_OPERATION_REGISTRY_SCHEMA,
+      ontology,
+      minimumConfidencePpm: 950_000,
+      operations: [
+        {
+          id: 'explain-redis',
+          aliases: [{ locale: 'it-IT', text: 'Spiegami Redis' }],
+          intent,
+        },
+      ],
+    };
+    await writeFile(normalizerPath, JSON.stringify(registry));
+    await writeFile(
+      fixturePath,
+      `${JSON.stringify({
+        schema: INTENT_EVALUATION_FIXTURE_SCHEMA,
+        kind: 'case',
+        id: 'cli-failure',
+        familyId: 'cli-failure',
+        split: 'conformance',
+        difficulty: 'adversarial',
+        phenomena: ['negation'],
+        input: { source: 'Spiegami Redis', locale: 'it-IT' },
+        expect: { kind: 'bypass' },
+      })}\n`,
+    );
+    const failed = await invoke(
+      'intent',
+      'evaluate',
+      '--normalizer',
+      normalizerPath,
+      '--fixture',
+      fixturePath,
+    );
+    expect(failed.code).toBe(2);
+    expect(JSON.parse(failed.stdout)).toMatchObject({
+      gate: { passed: false },
+      caseMetrics: { unsafeAccepts: 1 },
+    });
+
+    await writeFile(
+      normalizerPath,
+      JSON.stringify({ ...registry, dynamicImport: './unsafe.js' }),
+    );
+    const malformed = await invoke(
+      'intent',
+      'evaluate',
+      '--normalizer',
+      normalizerPath,
+      '--fixture',
+      fixturePath,
+    );
+    expect(malformed.code).toBe(1);
+    expect(malformed.stdout).toBe('');
+    expect(JSON.parse(malformed.stderr)).toMatchObject({
+      ok: false,
+      error: { reason: 'INTENT_MALFORMED' },
     });
   });
 });
