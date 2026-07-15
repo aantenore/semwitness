@@ -70,7 +70,7 @@ const DEFAULT_MAX_INTENT_REQUESTS = 100;
 const MAX_INTENT_REQUESTS = 1_000;
 const INTENT_COMPILER_BINDING_SCHEMA =
   'semwitness.dev/intent-compiler-binding/v1' as const;
-const SAFE_COMPILER_ENV = /^SEMWITNESS_[A-Z0-9_]{1,116}$/u;
+const SAFE_ENVIRONMENT_REF = /^SEMWITNESS_[A-Z0-9_]{1,116}$/u;
 const SAFE_PROVIDER_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 
 interface InputOptions {
@@ -569,7 +569,7 @@ function parseIntentCompilerBinding(
   const provider = strictJsonObject(
     config?.provider,
     ['name', 'baseUrl', 'model'],
-    ['apiKeyEnv'],
+    ['environmentRef'],
   );
   const policy = strictJsonObject(config?.policy, [
     'requestTimeoutMs',
@@ -577,7 +577,7 @@ function parseIntentCompilerBinding(
     'maxOutputTokens',
     'maxPromptBytes',
   ]);
-  const apiKeyEnv = provider?.apiKeyEnv;
+  const environmentRef = provider?.environmentRef;
   if (
     provider === undefined ||
     policy === undefined ||
@@ -588,8 +588,9 @@ function parseIntentCompilerBinding(
     provider.baseUrl.length > 2_048 ||
     typeof provider.model !== 'string' ||
     !isSafeModel(provider.model) ||
-    (apiKeyEnv !== undefined &&
-      (typeof apiKeyEnv !== 'string' || !SAFE_COMPILER_ENV.test(apiKeyEnv))) ||
+    (environmentRef !== undefined &&
+      (typeof environmentRef !== 'string' ||
+        !SAFE_ENVIRONMENT_REF.test(environmentRef))) ||
     !integerWithin(policy.requestTimeoutMs, 1, 300_000) ||
     !integerWithin(policy.maxResponseBytes, 256, 8 * 1024 * 1024) ||
     !integerWithin(policy.maxOutputTokens, 16, 4_096) ||
@@ -602,7 +603,7 @@ function parseIntentCompilerBinding(
       name: provider.name,
       baseUrl: provider.baseUrl,
       model: provider.model,
-      ...(apiKeyEnv === undefined ? {} : { apiKeyEnv }),
+      ...(environmentRef === undefined ? {} : { environmentRef }),
     }),
     policy: Object.freeze({
       requestTimeoutMs: policy.requestTimeoutMs as number,
