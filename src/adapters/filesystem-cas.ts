@@ -77,12 +77,22 @@ export class FilesystemCas implements ContentStore {
       try {
         await rename(temporary, target);
       } catch (error) {
-        if (!hasCode(error, 'EEXIST')) {
+        try {
+          // Windows reports EPERM, rather than EEXIST, when another writer
+          // wins the immutable publish race. Trust the existing object only
+          // after the normal bounded, no-symlink digest verification passes.
+          await this.get(reference);
+          await rm(temporary, { force: true });
+        } catch (existingError) {
+          if (
+            existingError instanceof SemWitnessError &&
+            existingError.code !== 'CAS_MISS'
+          ) {
+            throw existingError;
+          }
           throw error;
         }
-        await rm(temporary, { force: true });
       }
-      await chmod(target, 0o600);
       const stored = await this.get(reference);
       if (sha256(stored) !== reference) {
         throw new SemWitnessError(
