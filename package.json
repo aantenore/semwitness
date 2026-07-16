@@ -4,7 +4,7 @@
   "description": "Proof-carrying context optimization with promotion-gated JSON preparation and shadow intent-cache admission.",
   "type": "module",
   "license": "Apache-2.0",
-  "author": "Antonio Antenore <50747458+aantenore@users.noreply.github.com>",
+  "author": "Antonio Antenore <ant_ant95@hotmail.it>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/aantenore/semwitness.git"

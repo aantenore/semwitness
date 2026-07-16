@@ -59,7 +59,7 @@ The threat model includes role spoofing, marker injection, decompression bombs, 
 ## Delivery policy
 
 - Delivery: public GitHub repository on `aantenore`, commit and push `main` after all gates pass.
-- Identity: `Antonio Antenore <50747458+aantenore@users.noreply.github.com>` only.
+- Identity: `Antonio Antenore <ant_ant95@hotmail.it>` only.
 - CI: Node 24 on Ubuntu, macOS, and Windows plus dependency audit. CodeQL uses GitHub default setup enabled as a repository setting after the initial push, not an uncommitted workflow claim.
 - Rollback: revert the release commit; shadow mode and identity fallback remain the runtime safety net.
 
