@@ -295,6 +295,9 @@ provider/runtime counters:
   invalidation cost.
 
 The evaluator rejects zero baseline denominators and uses `BigInt` for totals.
+Before any arithmetic, both observations in every usage pair must bind the exact
+cost-model and currency-unit digests declared by the evidence binding. A pair
+from another pricing model or currency is malformed, not a comparable sample.
 It reports both median per-case paired ratios and ratio-of-sums. All population
 misses, bypasses, faults, and failures participate in workload net value.
 Usage is a closed union. Complete usage carries every counter as a bounded
@@ -358,6 +361,7 @@ semwitness.dev/intent-cache-promotion-evaluation-report/v1alpha1
 semwitness.dev/intent-cache-promotion-workbench-result/v1alpha1
 semwitness.dev/intent-cache-shadow-qualification/v1alpha1
 semwitness.dev/intent-cache-operation-binding/v1alpha1
+semwitness.dev/intent-cache-entry-source-binding/v1alpha1
 semwitness.dev/intent-cache-lookup-receipt/v1alpha1
 semwitness.dev/intent-normalization-bypass-receipt/v1alpha1
 ```
@@ -373,6 +377,11 @@ still plan-tier and uses the qualified read operation except that `side-effect`
 uses the bound conformance-only write/irreversible probe described above.
 Observation and response are malformed in every cohort. Every runtime decision
 remains `mode: "shadow"` and `applied: false`.
+
+The public evaluator accepts bounded JSONL bytes and invokes this strict parser
+before deriving any report or manifest. Unbranded caller-constructed objects
+cannot reach the qualification function, and reported case digests are copied
+only from parser-verified records.
 
 Limits are 50,000 cases, 256 KiB per line, and 128 MiB per document. The plan
 alpha fits within this bounded in-memory parser. A later observation or response
@@ -431,21 +440,23 @@ Every required scenario is crossed with the literal difficulty strata `simple`,
 with at least five cases per intersection. The evaluator owns this exact matrix;
 the evidence cannot weaken it.
 
-| Primary scenario      | Expected disposition |
-| --------------------- | -------------------- |
-| equivalent-paraphrase | safe would-hit       |
-| distinct-near-miss    | mandatory bypass     |
-| cross-tenant          | mandatory bypass     |
-| authorization-drift   | mandatory bypass     |
-| context-drift         | mandatory bypass     |
-| stale                 | mandatory bypass     |
-| dependency-drift      | mandatory bypass     |
-| side-effect           | mandatory bypass     |
-| store-fault           | mandatory bypass     |
+| Primary scenario      | Required path and disposition                                                 |
+| --------------------- | ----------------------------------------------------------------------------- |
+| equivalent-paraphrase | candidate-bearing safe would-hit                                              |
+| distinct-near-miss    | normalized-no-candidate policy bypass                                         |
+| cross-tenant          | normalized-no-candidate policy bypass                                         |
+| authorization-drift   | normalized-no-candidate policy bypass                                         |
+| context-drift         | normalized-no-candidate policy bypass                                         |
+| stale                 | normalized-no-candidate policy bypass                                         |
+| dependency-drift      | normalized-no-candidate policy bypass                                         |
+| side-effect           | normalized-no-candidate policy bypass plus the bound write/irreversible probe |
+| store-fault           | normalized-no-candidate store fault with safe fallback facts                  |
 
 Phenomenon tags additionally cover negation, quantifier, entity, unit, number,
 time, locale, output contract, coreference, prompt injection, Unicode, model,
-tool, policy, resolver, and invalidation drift.
+tool, policy, resolver, and invalidation drift. Every required tag must appear
+at least once in the adversarial corpus; missing phenomenon coverage is a hard
+gate even when all scenario intersections are populated.
 
 ## Acceptance criteria
 
@@ -469,6 +480,7 @@ tool, policy, resolver, and invalidation drift.
 | IP16 | Package delivery          | Installed tarball resolves `semwitness/intent/host` declarations and runtime                                                            | Pack-install smoke            |
 | IP17 | Derived identity          | Source relation and operation/domain scope are recomputed from HMACs, witnesses and binding digests, never caller labels                | Origin/scope-inflation tests  |
 | IP18 | Cohort semantics          | Population and ordinary adversarial cases use the qualified plan/read operation; side-effect uses a scoped-out write/irreversible probe | Cohort mutation tests         |
+| IP19 | Phenomenon coverage       | Every required adversarial phenomenon tag is present at least once and reported deterministically                                       | Missing-tag mutation tests    |
 
 ## Acceptance threshold
 
