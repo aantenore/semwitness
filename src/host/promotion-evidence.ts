@@ -20,7 +20,6 @@ import {
   type Sha256Digest,
   type TrustLevel,
 } from '../domain/types.js';
-import { isSafeTokenizerFingerprint } from '../ports/tokenizer.js';
 import { snapshotDataRecord, snapshotDenseDataArray } from './data-only.js';
 import {
   HOST_PREPARER_ARTIFACT,
@@ -65,20 +64,39 @@ export const HOST_PROMOTION_GATE_REASONS = [
   'EVALUATION_DESIGN_INVALID',
   'CORPUS_TOO_SMALL',
   'INCOMPLETE_CORPUS',
+  'CORPUS_DIGEST_MISMATCH',
+  'DUPLICATE_CASE_EVIDENCE',
+  'DUPLICATE_TRACE_EVIDENCE',
+  'DUPLICATE_QUALITY_EVIDENCE',
   'MISSING_REQUIRED_STRATUM',
   'MISSING_REQUIRED_CACHE_REGIME',
+  'INSUFFICIENT_STRATUM_CACHE_COVERAGE',
   'EXECUTION_FAILURES',
   'DEPLOYMENT_SCOPE_MISMATCH',
   'UNSUPPORTED_ACTIVE_CODEC',
   'UNDECLARED_CODEC_EVIDENCE',
   'CODEC_NOT_ALLOWED_BY_POLICY',
   'UNEVALUATED_CODEC',
+  'INSUFFICIENT_CODEC_COVERAGE',
   'UNSAFE_ACCEPTS',
   'TASK_QUALITY_REGRESSIONS',
   'PROMOTION_THRESHOLD_TOO_LOW',
+  'LATENCY_THRESHOLD_TOO_HIGH',
+  'CASE_REGRESSION_THRESHOLD_TOO_HIGH',
   'NET_SAVINGS_BELOW_THRESHOLD',
+  'AGGREGATE_NET_SAVINGS_BELOW_THRESHOLD',
   'CODEC_NET_SAVINGS_BELOW_THRESHOLD',
+  'STRATUM_NET_SAVINGS_BELOW_THRESHOLD',
+  'CACHE_REGIME_NET_SAVINGS_BELOW_THRESHOLD',
+  'CELL_NET_SAVINGS_BELOW_THRESHOLD',
+  'CASE_NET_REGRESSION_ABOVE_THRESHOLD',
   'LATENCY_REGRESSION_ABOVE_THRESHOLD',
+  'AGGREGATE_LATENCY_REGRESSION_ABOVE_THRESHOLD',
+  'CODEC_LATENCY_REGRESSION_ABOVE_THRESHOLD',
+  'STRATUM_LATENCY_REGRESSION_ABOVE_THRESHOLD',
+  'CACHE_REGIME_LATENCY_REGRESSION_ABOVE_THRESHOLD',
+  'CELL_LATENCY_REGRESSION_ABOVE_THRESHOLD',
+  'CASE_LATENCY_REGRESSION_ABOVE_THRESHOLD',
 ] as const;
 
 export type HostPromotionDifficultyStratum =
@@ -123,10 +141,13 @@ export interface HostPromotionEvidenceBinding {
     readonly order: 'randomized' | 'counterbalanced' | 'fixed';
     readonly requiredStrata: readonly HostPromotionDifficultyStratum[];
     readonly requiredCacheRegimes: readonly HostPromotionCacheRegime[];
+    readonly minimumCasesPerStratumCacheCell: number;
   };
   readonly gate: {
     readonly minimumMedianNetSavingsRatioPpm: number;
     readonly maximumMedianLatencyRegressionRatioPpm: number;
+    readonly maximumCaseNetRegressionRatioPpm: number;
+    readonly maximumCaseLatencyRegressionRatioPpm: number;
   };
 }
 
@@ -149,6 +170,7 @@ interface HostPromotionCaseBase {
   readonly schema: typeof HOST_PROMOTION_EVIDENCE_SCHEMA;
   readonly kind: 'case';
   readonly ordinal: number;
+  readonly caseDigest: Sha256Digest;
   readonly stratum: HostPromotionDifficultyStratum;
   readonly cacheRegime: HostPromotionCacheRegime;
   readonly codec: HostPromotionCodecRef;
@@ -202,6 +224,15 @@ export interface HostPromotionMetricSlice {
   readonly medianCostSavingsRatioPpm: number | null;
   readonly medianNetSavingsRatioPpm: number | null;
   readonly medianLatencyRegressionRatioPpm: number | null;
+  readonly aggregateInputSavingsRatioPpm: number | null;
+  readonly aggregateCostSavingsRatioPpm: number | null;
+  readonly aggregateNetSavingsRatioPpm: number | null;
+  readonly aggregateLatencyRegressionRatioPpm: number | null;
+}
+
+export interface HostPromotionCellMetric extends HostPromotionMetricSlice {
+  readonly stratum: HostPromotionDifficultyStratum;
+  readonly cacheRegime: HostPromotionCacheRegime;
 }
 
 export interface HostPromotionCaseResult {
@@ -237,6 +268,9 @@ export interface HostPromotionEvaluationReport {
     readonly taskQualityRegressions: number;
     readonly deploymentScopeMismatches: number;
     readonly undeclaredCodecCases: number;
+    readonly duplicateCaseDigests: number;
+    readonly duplicateTraceDigests: number;
+    readonly duplicateQualityEvidenceDigests: number;
   };
   readonly usageMetrics: {
     readonly baseline: HostPromotionUsageTotals;
@@ -245,6 +279,10 @@ export interface HostPromotionEvaluationReport {
     readonly medianCostSavingsRatioPpm: number | null;
     readonly medianNetSavingsRatioPpm: number | null;
     readonly medianLatencyRegressionRatioPpm: number | null;
+    readonly aggregateInputSavingsRatioPpm: number | null;
+    readonly aggregateCostSavingsRatioPpm: number | null;
+    readonly aggregateNetSavingsRatioPpm: number | null;
+    readonly aggregateLatencyRegressionRatioPpm: number | null;
   };
   readonly codecMetrics: readonly (HostPromotionMetricSlice & {
     readonly codec: HostPromotionCodecRef;
@@ -255,6 +293,7 @@ export interface HostPromotionEvaluationReport {
   readonly cacheRegimeMetrics: readonly (HostPromotionMetricSlice & {
     readonly cacheRegime: HostPromotionCacheRegime;
   })[];
+  readonly cellMetrics: readonly HostPromotionCellMetric[];
   readonly gate: {
     readonly passed: boolean;
     readonly reasons: readonly HostPromotionGateReason[];
@@ -272,12 +311,20 @@ export interface HostPromotionWorkbenchResult {
 }
 
 export const MIN_HOST_PROMOTION_CASES = 50;
+export const MIN_HOST_PROMOTION_CASES_PER_CODEC = 10;
+export const MIN_HOST_PROMOTION_CASES_PER_STRATUM_CACHE_CELL = 5;
+export const MAX_HOST_PROMOTION_MEDIAN_LATENCY_REGRESSION_RATIO_PPM = 500_000;
+export const MAX_HOST_PROMOTION_CASE_NET_REGRESSION_RATIO_PPM = 500_000;
+export const MAX_HOST_PROMOTION_CASE_LATENCY_REGRESSION_RATIO_PPM = 2_000_000;
 export const MAX_HOST_PROMOTION_CASES = 10_000;
+export const MAX_HOST_PROMOTION_EVIDENCE_CODE_UNITS = 32 * 1024 * 1024;
 const MAX_EVIDENCE_LINE_STRING_CODE_UNITS = 2_048;
 const MAX_EVIDENCE_LINE_ITEMS = 256;
 const MAX_CODEC_COUNT = 128;
 const MAX_LATENCY_RATIO_PPM = 1_000_000_000;
+const MAX_SAVINGS_REGRESSION_RATIO_PPM = 1_000_000_000;
 const MAX_CONFIGURED_LATENCY_RATIO_PPM = 10_000_000;
+const MAX_CONFIGURED_CASE_NET_REGRESSION_RATIO_PPM = 10_000_000;
 const TOKENIZER_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 const CODEC_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 
@@ -301,6 +348,7 @@ const COMPLETE_CASE_FIELDS = [
   'schema',
   'kind',
   'ordinal',
+  'caseDigest',
   'status',
   'stratum',
   'cacheRegime',
@@ -317,6 +365,7 @@ const FAILED_CASE_FIELDS = [
   'schema',
   'kind',
   'ordinal',
+  'caseDigest',
   'status',
   'stratum',
   'cacheRegime',
@@ -339,9 +388,26 @@ const USAGE_FIELDS = [
   'recoveryCount',
 ] as const;
 
+export function digestHostPromotionCorpus(
+  caseDigests: readonly Sha256Digest[],
+): Sha256Digest {
+  if (
+    caseDigests.length < 1 ||
+    caseDigests.length > MAX_HOST_PROMOTION_CASES ||
+    !caseDigests.every(isSha256Digest)
+  ) {
+    throw malformedEvidence('Corpus case digests are invalid');
+  }
+  return hashCanonical({
+    schema: 'semwitness.dev/host-promotion-corpus/v1alpha1',
+    caseDigests: [...caseDigests],
+  });
+}
+
 export function parseHostPromotionEvidenceJsonl(
   source: string,
   maximumCases = MAX_HOST_PROMOTION_CASES,
+  maximumSourceCodeUnits = MAX_HOST_PROMOTION_EVIDENCE_CODE_UNITS,
 ): HostPromotionEvidenceFixture {
   if (
     !Number.isSafeInteger(maximumCases) ||
@@ -349,6 +415,14 @@ export function parseHostPromotionEvidenceJsonl(
     maximumCases > MAX_HOST_PROMOTION_CASES
   ) {
     throw malformedEvidence('Evidence case limit is invalid');
+  }
+  if (
+    !Number.isSafeInteger(maximumSourceCodeUnits) ||
+    maximumSourceCodeUnits < 1 ||
+    maximumSourceCodeUnits > MAX_HOST_PROMOTION_EVIDENCE_CODE_UNITS ||
+    source.length > maximumSourceCodeUnits
+  ) {
+    throw malformedEvidence('Evidence source exceeds the size limit');
   }
 
   let binding: HostPromotionEvidenceBinding | undefined;
@@ -473,6 +547,22 @@ export function evaluateHostPromotionEvidence(input: {
   const taskQualityRegressions = completeCases.filter(
     (item) => item.taskQualityRegression,
   ).length;
+  const duplicateCaseDigests = duplicateCount(
+    fixture.cases.map((item) => item.caseDigest),
+  );
+  const duplicateTraceDigests = duplicateCount(
+    completeCases.flatMap((item) => [
+      item.baseline.traceDigest,
+      item.candidate.traceDigest,
+    ]),
+  );
+  const duplicateQualityEvidenceDigests = duplicateCount(
+    completeCases.map((item) => item.qualityEvidenceDigest),
+  );
+  const corpusDigestMatched =
+    fixture.cases.length > 0 &&
+    digestHostPromotionCorpus(fixture.cases.map((item) => item.caseDigest)) ===
+      binding.corpusDigest;
   const caseResults = fixture.cases.map((item) => evaluateCase(binding, item));
   const usageMetrics = summarizeUsage(completeCases, caseResults);
   const codecRefs = uniqueSortedCodecs([
@@ -486,6 +576,9 @@ export function evaluateHostPromotionEvidence(input: {
       caseResults,
     ),
   }));
+  const declaredCodecMetrics = codecMetrics.filter((metrics) =>
+    declaredCodecKeys.has(codecKey(metrics.codec)),
+  );
   const presentStrata = uniqueSortedEnum(
     fixture.cases.map((item) => item.stratum),
   );
@@ -506,6 +599,19 @@ export function evaluateHostPromotionEvidence(input: {
       caseResults,
     ),
   }));
+  const cellMetrics = HOST_PROMOTION_DIFFICULTY_STRATA.flatMap((stratum) =>
+    HOST_PROMOTION_CACHE_REGIMES.map((cacheRegime) => ({
+      stratum,
+      cacheRegime,
+      ...metricSlice(
+        fixture.cases.filter(
+          (item) =>
+            item.stratum === stratum && item.cacheRegime === cacheRegime,
+        ),
+        caseResults,
+      ),
+    })),
+  );
 
   const reasons: HostPromotionGateReason[] = [];
   const addReason = (reason: HostPromotionGateReason): void => {
@@ -536,13 +642,32 @@ export function evaluateHostPromotionEvidence(input: {
     addReason('USAGE_NOT_EXACT');
   }
   if (binding.split !== 'held-out') addReason('SPLIT_NOT_HELD_OUT');
-  if (binding.design.pairing !== 'paired' || binding.design.order === 'fixed') {
+  if (
+    binding.design.pairing !== 'paired' ||
+    binding.design.order === 'fixed' ||
+    !hasExactlyRequiredValues(
+      binding.design.requiredStrata,
+      HOST_PROMOTION_DIFFICULTY_STRATA,
+    ) ||
+    !hasExactlyRequiredValues(
+      binding.design.requiredCacheRegimes,
+      HOST_PROMOTION_CACHE_REGIMES,
+    ) ||
+    binding.design.minimumCasesPerStratumCacheCell <
+      MIN_HOST_PROMOTION_CASES_PER_STRATUM_CACHE_CELL
+  ) {
     addReason('EVALUATION_DESIGN_INVALID');
   }
   if (binding.expectedCases < MIN_HOST_PROMOTION_CASES) {
     addReason('CORPUS_TOO_SMALL');
   }
   if (!hasCompleteOrdinalRange(fixture)) addReason('INCOMPLETE_CORPUS');
+  if (!corpusDigestMatched) addReason('CORPUS_DIGEST_MISMATCH');
+  if (duplicateCaseDigests > 0) addReason('DUPLICATE_CASE_EVIDENCE');
+  if (duplicateTraceDigests > 0) addReason('DUPLICATE_TRACE_EVIDENCE');
+  if (duplicateQualityEvidenceDigests > 0) {
+    addReason('DUPLICATE_QUALITY_EVIDENCE');
+  }
   if (
     binding.design.requiredStrata.some(
       (stratum) => !presentStrata.includes(stratum),
@@ -556,6 +681,13 @@ export function evaluateHostPromotionEvidence(input: {
     )
   ) {
     addReason('MISSING_REQUIRED_CACHE_REGIME');
+  }
+  const minimumCasesPerCell = Math.max(
+    binding.design.minimumCasesPerStratumCacheCell,
+    MIN_HOST_PROMOTION_CASES_PER_STRATUM_CACHE_CELL,
+  );
+  if (cellMetrics.some((metrics) => metrics.caseCount < minimumCasesPerCell)) {
+    addReason('INSUFFICIENT_STRATUM_CACHE_COVERAGE');
   }
   if (failedCases.length > 0) addReason('EXECUTION_FAILURES');
   if (deploymentScopeMismatches > 0) {
@@ -576,6 +708,19 @@ export function evaluateHostPromotionEvidence(input: {
   ) {
     addReason('UNEVALUATED_CODEC');
   }
+  if (
+    binding.codecs.some((codec) => {
+      const metrics = codecMetrics.find(
+        (item) => codecKey(item.codec) === codecKey(codec),
+      );
+      return (
+        metrics === undefined ||
+        metrics.complete < MIN_HOST_PROMOTION_CASES_PER_CODEC
+      );
+    })
+  ) {
+    addReason('INSUFFICIENT_CODEC_COVERAGE');
+  }
   if (unsafeAccepts > 0) addReason('UNSAFE_ACCEPTS');
   if (taskQualityRegressions > 0) addReason('TASK_QUALITY_REGRESSIONS');
   if (
@@ -584,9 +729,35 @@ export function evaluateHostPromotionEvidence(input: {
   ) {
     addReason('PROMOTION_THRESHOLD_TOO_LOW');
   }
+  if (
+    binding.gate.maximumMedianLatencyRegressionRatioPpm >
+      MAX_HOST_PROMOTION_MEDIAN_LATENCY_REGRESSION_RATIO_PPM ||
+    binding.gate.maximumCaseLatencyRegressionRatioPpm >
+      MAX_HOST_PROMOTION_CASE_LATENCY_REGRESSION_RATIO_PPM
+  ) {
+    addReason('LATENCY_THRESHOLD_TOO_HIGH');
+  }
+  if (
+    binding.gate.maximumCaseNetRegressionRatioPpm >
+    MAX_HOST_PROMOTION_CASE_NET_REGRESSION_RATIO_PPM
+  ) {
+    addReason('CASE_REGRESSION_THRESHOLD_TOO_HIGH');
+  }
   const effectiveSavingsThreshold = Math.max(
     binding.gate.minimumMedianNetSavingsRatioPpm,
     MIN_HOST_PROMOTION_SAVINGS_RATIO_PPM,
+  );
+  const effectiveMedianLatencyCeiling = Math.min(
+    binding.gate.maximumMedianLatencyRegressionRatioPpm,
+    MAX_HOST_PROMOTION_MEDIAN_LATENCY_REGRESSION_RATIO_PPM,
+  );
+  const effectiveCaseNetRegressionCeiling = Math.min(
+    binding.gate.maximumCaseNetRegressionRatioPpm,
+    MAX_HOST_PROMOTION_CASE_NET_REGRESSION_RATIO_PPM,
+  );
+  const effectiveCaseLatencyRegressionCeiling = Math.min(
+    binding.gate.maximumCaseLatencyRegressionRatioPpm,
+    MAX_HOST_PROMOTION_CASE_LATENCY_REGRESSION_RATIO_PPM,
   );
   if (
     usageMetrics.medianNetSavingsRatioPpm === null ||
@@ -595,25 +766,69 @@ export function evaluateHostPromotionEvidence(input: {
     addReason('NET_SAVINGS_BELOW_THRESHOLD');
   }
   if (
-    binding.codecs.some((codec) => {
-      const metrics = codecMetrics.find(
-        (item) => codecKey(item.codec) === codecKey(codec),
-      );
-      return (
-        metrics === undefined ||
-        metrics.medianNetSavingsRatioPpm === null ||
-        metrics.medianNetSavingsRatioPpm < effectiveSavingsThreshold
-      );
-    })
+    usageMetrics.aggregateNetSavingsRatioPpm === null ||
+    usageMetrics.aggregateNetSavingsRatioPpm < effectiveSavingsThreshold
   ) {
+    addReason('AGGREGATE_NET_SAVINGS_BELOW_THRESHOLD');
+  }
+  if (sliceFailsSavingsGate(declaredCodecMetrics, effectiveSavingsThreshold)) {
     addReason('CODEC_NET_SAVINGS_BELOW_THRESHOLD');
+  }
+  if (sliceFailsSavingsGate(stratumMetrics, effectiveSavingsThreshold)) {
+    addReason('STRATUM_NET_SAVINGS_BELOW_THRESHOLD');
+  }
+  if (sliceFailsSavingsGate(cacheRegimeMetrics, effectiveSavingsThreshold)) {
+    addReason('CACHE_REGIME_NET_SAVINGS_BELOW_THRESHOLD');
+  }
+  if (sliceFailsSavingsGate(cellMetrics, effectiveSavingsThreshold)) {
+    addReason('CELL_NET_SAVINGS_BELOW_THRESHOLD');
+  }
+  if (
+    caseResults.some(
+      (item) =>
+        hasCompletedMetrics(item) &&
+        item.netSavingsRatioPpm < -effectiveCaseNetRegressionCeiling,
+    )
+  ) {
+    addReason('CASE_NET_REGRESSION_ABOVE_THRESHOLD');
   }
   if (
     usageMetrics.medianLatencyRegressionRatioPpm === null ||
-    usageMetrics.medianLatencyRegressionRatioPpm >
-      binding.gate.maximumMedianLatencyRegressionRatioPpm
+    usageMetrics.medianLatencyRegressionRatioPpm > effectiveMedianLatencyCeiling
   ) {
     addReason('LATENCY_REGRESSION_ABOVE_THRESHOLD');
+  }
+  if (
+    usageMetrics.aggregateLatencyRegressionRatioPpm === null ||
+    usageMetrics.aggregateLatencyRegressionRatioPpm >
+      effectiveMedianLatencyCeiling
+  ) {
+    addReason('AGGREGATE_LATENCY_REGRESSION_ABOVE_THRESHOLD');
+  }
+  if (
+    sliceFailsLatencyGate(declaredCodecMetrics, effectiveMedianLatencyCeiling)
+  ) {
+    addReason('CODEC_LATENCY_REGRESSION_ABOVE_THRESHOLD');
+  }
+  if (sliceFailsLatencyGate(stratumMetrics, effectiveMedianLatencyCeiling)) {
+    addReason('STRATUM_LATENCY_REGRESSION_ABOVE_THRESHOLD');
+  }
+  if (
+    sliceFailsLatencyGate(cacheRegimeMetrics, effectiveMedianLatencyCeiling)
+  ) {
+    addReason('CACHE_REGIME_LATENCY_REGRESSION_ABOVE_THRESHOLD');
+  }
+  if (sliceFailsLatencyGate(cellMetrics, effectiveMedianLatencyCeiling)) {
+    addReason('CELL_LATENCY_REGRESSION_ABOVE_THRESHOLD');
+  }
+  if (
+    caseResults.some(
+      (item) =>
+        hasCompletedMetrics(item) &&
+        item.latencyRegressionRatioPpm > effectiveCaseLatencyRegressionCeiling,
+    )
+  ) {
+    addReason('CASE_LATENCY_REGRESSION_ABOVE_THRESHOLD');
   }
 
   const orderedReasons = HOST_PROMOTION_GATE_REASONS.filter((reason) =>
@@ -637,11 +852,15 @@ export function evaluateHostPromotionEvidence(input: {
       taskQualityRegressions,
       deploymentScopeMismatches,
       undeclaredCodecCases,
+      duplicateCaseDigests,
+      duplicateTraceDigests,
+      duplicateQualityEvidenceDigests,
     },
     usageMetrics,
     codecMetrics,
     stratumMetrics,
     cacheRegimeMetrics,
+    cellMetrics,
     gate: { passed: orderedReasons.length === 0, reasons: orderedReasons },
     cases: caseResults,
   });
@@ -724,7 +943,7 @@ function parseBinding(value: unknown): HostPromotionEvidenceBinding {
     if (
       typeof tokenizerRecord.id !== 'string' ||
       !TOKENIZER_ID_PATTERN.test(tokenizerRecord.id) ||
-      !isSafeTokenizerFingerprint(tokenizerRecord.fingerprint) ||
+      !isSha256Digest(tokenizerRecord.fingerprint) ||
       !isOneOf(tokenizerRecord.reliability, [
         'exact',
         'heuristic',
@@ -738,6 +957,7 @@ function parseBinding(value: unknown): HostPromotionEvidenceBinding {
       'order',
       'requiredStrata',
       'requiredCacheRegimes',
+      'minimumCasesPerStratumCacheCell',
     ]);
     if (
       !isOneOf(designRecord.pairing, ['paired', 'unpaired'] as const) ||
@@ -757,9 +977,16 @@ function parseBinding(value: unknown): HostPromotionEvidenceBinding {
       designRecord.requiredCacheRegimes,
       HOST_PROMOTION_CACHE_REGIMES,
     );
+    const minimumCasesPerStratumCacheCell = integerWithin(
+      designRecord.minimumCasesPerStratumCacheCell,
+      1,
+      MAX_HOST_PROMOTION_CASES,
+    );
     const gateRecord = snapshotDataRecord(root.gate, [
       'minimumMedianNetSavingsRatioPpm',
       'maximumMedianLatencyRegressionRatioPpm',
+      'maximumCaseNetRegressionRatioPpm',
+      'maximumCaseLatencyRegressionRatioPpm',
     ]);
     const minimumMedianNetSavingsRatioPpm = integerWithin(
       gateRecord.minimumMedianNetSavingsRatioPpm,
@@ -769,6 +996,16 @@ function parseBinding(value: unknown): HostPromotionEvidenceBinding {
     const maximumMedianLatencyRegressionRatioPpm = integerWithin(
       gateRecord.maximumMedianLatencyRegressionRatioPpm,
       -1_000_000,
+      MAX_CONFIGURED_LATENCY_RATIO_PPM,
+    );
+    const maximumCaseNetRegressionRatioPpm = integerWithin(
+      gateRecord.maximumCaseNetRegressionRatioPpm,
+      0,
+      MAX_CONFIGURED_CASE_NET_REGRESSION_RATIO_PPM,
+    );
+    const maximumCaseLatencyRegressionRatioPpm = integerWithin(
+      gateRecord.maximumCaseLatencyRegressionRatioPpm,
+      0,
       MAX_CONFIGURED_LATENCY_RATIO_PPM,
     );
     const expectedCases = integerWithin(
@@ -806,10 +1043,13 @@ function parseBinding(value: unknown): HostPromotionEvidenceBinding {
         order: designRecord.order,
         requiredStrata,
         requiredCacheRegimes,
+        minimumCasesPerStratumCacheCell,
       },
       gate: {
         minimumMedianNetSavingsRatioPpm,
         maximumMedianLatencyRegressionRatioPpm,
+        maximumCaseNetRegressionRatioPpm,
+        maximumCaseLatencyRegressionRatioPpm,
       },
     };
   } catch (error) {
@@ -868,6 +1108,7 @@ function parseCaseBase(
   if (
     root.schema !== HOST_PROMOTION_EVIDENCE_SCHEMA ||
     root.kind !== 'case' ||
+    !isSha256Digest(root.caseDigest) ||
     !isOneOf(root.stratum, HOST_PROMOTION_DIFFICULTY_STRATA) ||
     !isOneOf(root.cacheRegime, HOST_PROMOTION_CACHE_REGIMES) ||
     !isSha256Digest(root.deploymentScopeDigest)
@@ -878,6 +1119,7 @@ function parseCaseBase(
     schema: HOST_PROMOTION_EVIDENCE_SCHEMA,
     kind: 'case',
     ordinal: integerWithin(root.ordinal, 0, MAX_HOST_PROMOTION_CASES - 1),
+    caseDigest: root.caseDigest,
     stratum: root.stratum,
     cacheRegime: root.cacheRegime,
     codec: parseCodec(root.codec),
@@ -1049,9 +1291,19 @@ function summarizeUsage(
   results: readonly HostPromotionCaseResult[],
 ): HostPromotionEvaluationReport['usageMetrics'] {
   const completedResults = results.filter(hasCompletedMetrics);
+  const baseline = sumUsage(cases.map((item) => item.baseline));
+  const candidate = sumUsage(cases.map((item) => item.candidate));
+  const aggregateInputSavingsRatioPpm = aggregateCreditedSavingsRatioPpm(
+    cases,
+    (observation) => observation.totalInputTokens,
+  );
+  const aggregateCostSavingsRatioPpm = aggregateCreditedSavingsRatioPpm(
+    cases,
+    (observation) => observation.normalizedCostUnits,
+  );
   return {
-    baseline: sumUsage(cases.map((item) => item.baseline)),
-    candidate: sumUsage(cases.map((item) => item.candidate)),
+    baseline,
+    candidate,
     medianInputSavingsRatioPpm: median(
       completedResults.map((item) => item.inputSavingsRatioPpm),
     ),
@@ -1064,6 +1316,14 @@ function summarizeUsage(
     medianLatencyRegressionRatioPpm: median(
       completedResults.map((item) => item.latencyRegressionRatioPpm),
     ),
+    aggregateInputSavingsRatioPpm,
+    aggregateCostSavingsRatioPpm,
+    aggregateNetSavingsRatioPpm:
+      aggregateInputSavingsRatioPpm === null ||
+      aggregateCostSavingsRatioPpm === null
+        ? null
+        : Math.min(aggregateInputSavingsRatioPpm, aggregateCostSavingsRatioPpm),
+    aggregateLatencyRegressionRatioPpm: aggregateLatencyRatioPpm(cases),
   };
 }
 
@@ -1075,6 +1335,14 @@ function metricSlice(
   const selectedResults = results.filter((item) => ordinals.has(item.ordinal));
   const completedResults = selectedResults.filter(hasCompletedMetrics);
   const completeCases = cases.filter(isCompleteCase);
+  const aggregateInputSavingsRatioPpm = aggregateCreditedSavingsRatioPpm(
+    completeCases,
+    (observation) => observation.totalInputTokens,
+  );
+  const aggregateCostSavingsRatioPpm = aggregateCreditedSavingsRatioPpm(
+    completeCases,
+    (observation) => observation.normalizedCostUnits,
+  );
   return {
     caseCount: cases.length,
     complete: completeCases.length,
@@ -1094,6 +1362,14 @@ function metricSlice(
     medianLatencyRegressionRatioPpm: median(
       completedResults.map((item) => item.latencyRegressionRatioPpm),
     ),
+    aggregateInputSavingsRatioPpm,
+    aggregateCostSavingsRatioPpm,
+    aggregateNetSavingsRatioPpm:
+      aggregateInputSavingsRatioPpm === null ||
+      aggregateCostSavingsRatioPpm === null
+        ? null
+        : Math.min(aggregateInputSavingsRatioPpm, aggregateCostSavingsRatioPpm),
+    aggregateLatencyRegressionRatioPpm: aggregateLatencyRatioPpm(completeCases),
   };
 }
 
@@ -1120,7 +1396,55 @@ function sumUsage(
 function savingsRatioPpm(baseline: number, candidate: number): number {
   const ratio =
     ((BigInt(baseline) - BigInt(candidate)) * 1_000_000n) / BigInt(baseline);
-  return Number(clampBigInt(ratio, -1_000_000n, 1_000_000n));
+  return Number(
+    clampBigInt(ratio, -BigInt(MAX_SAVINGS_REGRESSION_RATIO_PPM), 1_000_000n),
+  );
+}
+
+function aggregateCreditedSavingsRatioPpm(
+  cases: readonly HostPromotionCompleteCase[],
+  select: (observation: HostPromotionUsageObservation) => number,
+): number | null {
+  if (cases.length === 0) return null;
+  let baselineTotal = 0n;
+  let creditedDelta = 0n;
+  for (const item of cases) {
+    const baseline = BigInt(select(item.baseline));
+    const candidate = BigInt(select(item.candidate));
+    const delta = baseline - candidate;
+    baselineTotal += baseline;
+    creditedDelta +=
+      item.decision === 'applied' ? delta : delta < 0n ? delta : 0n;
+  }
+  if (baselineTotal === 0n) return null;
+  return Number(
+    clampBigInt(
+      (creditedDelta * 1_000_000n) / baselineTotal,
+      -BigInt(MAX_SAVINGS_REGRESSION_RATIO_PPM),
+      1_000_000n,
+    ),
+  );
+}
+
+function aggregateLatencyRatioPpm(
+  cases: readonly HostPromotionCompleteCase[],
+): number | null {
+  if (cases.length === 0) return null;
+  const baseline = cases.reduce(
+    (total, item) => total + BigInt(item.baseline.endToEndLatencyMicros),
+    0n,
+  );
+  const candidate = cases.reduce(
+    (total, item) => total + BigInt(item.candidate.endToEndLatencyMicros),
+    0n,
+  );
+  return Number(
+    clampBigInt(
+      ((candidate - baseline) * 1_000_000n) / baseline,
+      -1_000_000n,
+      BigInt(MAX_LATENCY_RATIO_PPM),
+    ),
+  );
 }
 
 function latencyRegressionRatioPpm(
@@ -1196,6 +1520,46 @@ function uniqueSortedEnum<Value extends string>(
   values: readonly Value[],
 ): readonly Value[] {
   return [...new Set(values)].sort(compareCodeUnits);
+}
+
+function hasExactlyRequiredValues<Value extends string>(
+  values: readonly Value[],
+  required: readonly Value[],
+): boolean {
+  return (
+    values.length === required.length &&
+    required.every((value) => values.includes(value))
+  );
+}
+
+function duplicateCount(values: readonly string[]): number {
+  return values.length - new Set(values).size;
+}
+
+function sliceFailsSavingsGate(
+  slices: readonly HostPromotionMetricSlice[],
+  threshold: number,
+): boolean {
+  return slices.some(
+    (slice) =>
+      slice.medianNetSavingsRatioPpm === null ||
+      slice.medianNetSavingsRatioPpm < threshold ||
+      slice.aggregateNetSavingsRatioPpm === null ||
+      slice.aggregateNetSavingsRatioPpm < threshold,
+  );
+}
+
+function sliceFailsLatencyGate(
+  slices: readonly HostPromotionMetricSlice[],
+  threshold: number,
+): boolean {
+  return slices.some(
+    (slice) =>
+      slice.medianLatencyRegressionRatioPpm === null ||
+      slice.medianLatencyRegressionRatioPpm > threshold ||
+      slice.aggregateLatencyRegressionRatioPpm === null ||
+      slice.aggregateLatencyRegressionRatioPpm > threshold,
+  );
 }
 
 function uniqueSortedCodecs(
