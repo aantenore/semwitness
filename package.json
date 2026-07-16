@@ -42,6 +42,10 @@
       "types": "./dist/intent/index.d.ts",
       "import": "./dist/intent/index.js"
     },
+    "./intent/host": {
+      "types": "./dist/intent-host/index.d.ts",
+      "import": "./dist/intent-host/index.js"
+    },
     "./intent/openai-compatible": {
       "types": "./dist/adapters/openai-compatible-intent-compiler.d.ts",
       "import": "./dist/adapters/openai-compatible-intent-compiler.js"
