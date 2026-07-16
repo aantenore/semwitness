@@ -95,10 +95,12 @@ The report names and preserves three different denominators:
 - `falseDiscoveryRate`: unsafe normalized-intent would-hits divided by all
   normalized-intent would-hits;
 - `unsafeAdmissionRate`: unsafe normalized-intent would-hits divided by every
-  normalized-intent opportunity that is not fully safe-permitted. This is the
-  complement of the safe permission predicate and explicitly includes
-  `different`, `not-comparable`, mismatch, deny, stale, forbidden, regression,
-  and every unknown state whether the runtime would-hit, miss, or bypass;
+  normalized-intent unsafe opportunity. An unsafe opportunity has
+  `different`/`not-comparable` artifact relation; any negative or unknown scope,
+  authorization, freshness, effect, or policy state; or a candidate-bearing
+  quality regression/not-evaluated state. A no-candidate permitted-equivalent
+  opportunity does not become unsafe merely because candidate quality is
+  unavailable;
 - `falseMissRate`: oracle-permitted equivalent misses/bypasses divided by all
   oracle-permitted equivalent opportunities.
 
@@ -132,13 +134,26 @@ pad `n`.
 
 ## Derived safety truth table
 
-Each candidate-bearing complete case carries both full content-free
-`NormalizationWitness` and `CacheHitWitness` envelopes plus independent oracle
-facts. A no-candidate miss or pre-lookup bypass instead carries the full
-normalization witness and a strict, digest-bound, content-free lookup receipt;
-it never invents a cache entry. The workbench parses the strict schemas,
-recomputes envelope digests, cross-checks bindings and decisions, and never
-accepts an isolated opaque witness digest as proof.
+Complete cases use a closed three-path union:
+
+- `candidate-bearing`: full content-free `NormalizationWitness` and
+  `CacheHitWitness` envelopes;
+- `normalized-no-candidate`: a full normalization witness plus a strict,
+  digest-bound lookup receipt for `miss`, `policy-bypass`, `store-fault`,
+  `timeout`, or `fallback`; it never invents a cache entry;
+- `normalization-bypass`: a strict normalization-bypass receipt and
+  `lookup: "not-attempted"`, without a fabricated Intent IR, operation, or
+  normalization witness.
+
+The lookup receipt binds `mode: "shadow"`, `applied: false`, source HMAC,
+normalizer/ontology/policy contracts, optional observed operation binding,
+candidate-index/store contracts, outcome, allowlisted reason, accounting
+disposition, and its recomputed digest. The normalization-bypass receipt binds
+the same shadow literals, source HMAC, normalizer/ontology/policy contracts,
+allowlisted compiler/registry/no-match/abort reason, accounting disposition,
+and its recomputed digest. The workbench parses these strict schemas,
+cross-checks bindings and decisions, and never accepts an isolated opaque
+witness digest as proof.
 
 Candidate origin is derived rather than trusted. Candidate cases carry
 domain-separated `entrySourceHmac` and `lookupSourceHmac`; the latter must equal
@@ -147,15 +162,29 @@ inequality means `normalized-intent`. Plain source SHA-256 is rejected at this
 host boundary. Miss and bypass are separately derived dispositions, never
 values of the origin field.
 
-Each case also carries a content-free operation binding over operation HMAC,
-domain HMAC, intent digest, registry digest, ontology digest, and its own
-recomputed binding digest. It must cross-link the normalization, entry/lookup,
-registry, and ontology evidence. A caller-selected operation label is not
-evidence.
+A normalized-no-candidate path enters a semantic denominator only when its
+reference artifact, reference entry-source HMAC, and reference operation
+binding are all present and cross-linked. Source equality is exact and excluded;
+source inequality is a normalized-intent opportunity. A path without the full
+reference is diagnostic/value evidence only. Normalization-bypass paths never
+enter semantic denominators because no observed typed intent exists.
 
-Oracle facts are separate enums, not one aggregate boolean:
+Every normalized path also carries a content-free operation binding over
+operation HMAC, domain HMAC, intent digest, effect, registry digest, ontology
+digest, and its own recomputed binding digest. It must cross-link the
+normalization, entry/lookup or oracle reference, registry, and ontology
+evidence. A normalization-bypass may carry only a separately named
+`oracleOperationBinding`, which is never treated as observed. A caller-selected
+operation label is not evidence.
 
-- ordinary and candidate artifact digests plus a unique quality-evidence digest;
+Oracle facts are separate enums, not one aggregate boolean. Ordinary artifact
+digest is always present. Candidate-bearing paths additionally carry an
+`observedCandidateArtifactDigest` and unique quality-evidence digest. A
+no-candidate path may carry an independently attested reference artifact digest,
+entry-source HMAC, and operation binding; all three are required before it can
+count as a false-miss opportunity. Without that reference its artifact relation
+is `not-comparable`:
+
 - artifact relation: `equivalent`, `different`, or `not-comparable`;
 - scope: `match`, `mismatch`, or `unknown`;
 - authorization: `current-allow`, `deny`, or `unknown`;
@@ -176,15 +205,29 @@ AND policy=allow
 AND task-quality=pass
 ```
 
-Every `different`, `not-comparable`, deny, mismatch, stale, forbidden, unknown,
-regression, or not-evaluated would-hit is unsafe. Unknown never means allow.
-The candidate artifact digest must match the cache entry `valueDigest`; otherwise
-the case is malformed rather than merely unsafe.
+For candidate-bearing paths, every `different`, `not-comparable`, deny,
+mismatch, stale, forbidden, unknown, regression, or not-evaluated would-hit is
+unsafe. Unknown never means allow. The observed candidate artifact digest must
+match the cache entry `valueDigest`; otherwise the case is malformed rather than
+merely unsafe.
+
+For no-candidate paths, a permission-safe opportunity is `equivalent`, scope
+match, current authorization allow, fresh, effect allowed, and policy allow.
+Candidate task quality is intentionally excluded because no candidate exists.
+A miss or bypass on such a referenced opportunity is false-miss evidence; all
+other comparable/unknown paths are classified independently for unsafe
+opportunity accounting.
 
 Store-fault cases distinguish `expectedFaultObserved`,
 `ordinaryPathSucceeded`, `candidateFallbackSucceeded`, and
 `unexpectedExecutionFailure`. A correctly injected store fault passes only when
 the candidate fails closed and the ordinary path succeeds.
+
+`side-effect` conformance uses a normalized-no-candidate lookup receipt with
+`outcome: "policy-bypass"` and reason `ALPHA_EFFECT_FORBIDDEN` before store
+access. Its operation binding carries `write` or `irreversible`. A
+candidate-bearing eligible side-effect record is well-formed evidence but fails
+the conformance gate.
 
 ## Qualification scope
 
@@ -203,9 +246,9 @@ The strict shadow qualification manifest binds:
 - prompt, tool, planner, provider, model, output, safety, personalization,
   determinism, tokenizer, embedding/candidate-index, store, record
   authentication, freshness/invalidation, and key contracts are all bound in
-  the alpha. An unused capability is represented by an explicit frozen
-  `disabled` adapter artifact; the evidence producer cannot omit it or choose
-  `not-applicable`;
+  the alpha. Every slot has status `enabled` or `disabled` and still binds an
+  explicit frozen adapter artifact; the evidence producer cannot omit it or
+  choose `not-applicable`;
 - cache namespace and tenant scope HMACs;
 - population, corpus, source-log root, sampling, inclusion, evaluator, oracle,
   accounting, and report digests.
@@ -238,6 +281,10 @@ provider/runtime counters:
 The evaluator rejects zero baseline denominators and uses `BigInt` for totals.
 It reports both median per-case paired ratios and ratio-of-sums. All population
 misses, bypasses, faults, and failures participate in workload net value.
+Failure records carry every actually observed counter plus
+`accountingCompleteness: "complete" | "incomplete"`. The evaluator never
+imputes missing usage. Any incomplete pair makes value status `unavailable`, and
+any population failure blocks qualification regardless of accounting status.
 
 Oracle-permitted normalized-intent reusable population slices require at least
 10% median and aggregate net savings globally and in all eight evaluator-owned
@@ -292,12 +339,15 @@ semwitness.dev/intent-cache-promotion-evidence/v1alpha1
 semwitness.dev/intent-cache-promotion-evaluation-report/v1alpha1
 semwitness.dev/intent-cache-promotion-workbench-result/v1alpha1
 semwitness.dev/intent-cache-shadow-qualification/v1alpha1
+semwitness.dev/intent-cache-lookup-receipt/v1alpha1
+semwitness.dev/intent-normalization-bypass-receipt/v1alpha1
 ```
 
 The strict JSONL contains one binding followed by contiguous ordered population
 cases and then contiguous ordered adversarial cases. Closed record variants are
 `population-complete`, `population-failure`, `adversarial-complete`, and
-`adversarial-failure`. Population is exactly plan/read. Adversarial evidence is
+`adversarial-failure`; each complete record contains exactly one of the three
+execution paths above. Population is exactly plan/read. Adversarial evidence is
 still plan-tier but may use write or irreversible effects only to prove the
 `side-effect` mandatory bypass. Observation and response are malformed in every
 cohort. Every runtime decision remains `mode: "shadow"` and `applied: false`.
@@ -314,9 +364,11 @@ semwitness intent promotion evaluate \
   --json
 ```
 
-Exit `0` means qualified; `2` means valid evidence failed a gate; `1` means
-malformed, unsafe, or I/O failure. Existing output files and symlinks are
-refused. No output manifest is created on exit `1` or `2`.
+Exit `0` means qualified. Exit `2` means well-formed evidence failed a gate,
+including observed unsafe hits, population failures, or adversarial truth-table
+violations. Exit `1` is reserved for malformed schema, tampering/internal
+inconsistency, internal errors, or I/O failure. Existing output files and
+symlinks are refused. No output manifest is created on exit `1` or `2`.
 
 ## Scope
 
