@@ -267,6 +267,14 @@ function parseManifest(value: unknown): IntentCacheShadowQualificationManifest {
       statisticalClaims.falseMissRate.oraclePermittedEquivalentOpportunities ||
     BigInt(
       statisticalClaims.falseMissRate.oraclePermittedEquivalentOpportunities,
+    ) !==
+      BigInt(population.normalizedIntentWouldHits) +
+        BigInt(statisticalClaims.falseMissRate.missesOrBypasses) ||
+    BigInt(statisticalClaims.falseMissRate.missesOrBypasses) +
+      BigInt(statisticalClaims.unsafeAdmissionRate.trials) >
+      BigInt(population.misses) + BigInt(population.bypasses) ||
+    BigInt(
+      statisticalClaims.falseMissRate.oraclePermittedEquivalentOpportunities,
     ) +
       BigInt(statisticalClaims.unsafeAdmissionRate.trials) >
       BigInt(population.uniqueClusters) ||
