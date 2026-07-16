@@ -72,8 +72,10 @@ Must:
   retries, recovery, and invalidations. Provider-prefix and semantic-cache
   effects remain separate.
 - Require at least 10% median and aggregate net savings globally and in every
-  required difficulty/cache and safety slice. A high hit rate cannot compensate
-  for a negative slice.
+  required difficulty/cache slice of oracle-permitted reuse. Safety scenarios
+  that must bypass instead have a non-weakenable median and aggregate overhead
+  ceiling. A high hit rate cannot compensate for a negative reusable slice or
+  unbounded fail-closed overhead.
 - Emit one promotion manifest for exactly one tier and one dependency bundle.
   Promotion of `plan` cannot promote `observation` or `response`.
 - Return a valid evaluation report and exit code `2` when evidence is well-formed
@@ -156,22 +158,22 @@ would remain below the ceiling.
 
 ## Acceptance criteria
 
-| ID   | Requirement               | Acceptance                                                                                       | Verification                |
-| ---- | ------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------- |
-| IP1  | Contract isolation        | Compression manifests and intent-cache manifests are mutually invalid                            | Cross-schema tests          |
-| IP2  | Strict payload-free input | Unknown/raw fields, duplicate keys, oversized lines, and malformed values fail before evaluation | Parser and privacy tests    |
-| IP3  | Evidence uniqueness       | Duplicate case, trace, or quality digest prevents promotion                                      | Adversarial fixture tests   |
-| IP4  | Complete coverage         | Every required difficulty/cache cell and safety scenario meets its minimum                       | Missing-cell mutation tests |
-| IP5  | Tier isolation            | One manifest contains exactly one tier and cannot authorize another                              | Schema and mutation tests   |
-| IP6  | Safety                    | False, prohibited, stale, unauthorized, cross-tenant, and forbidden-effect hits are zero         | Derived counter tests       |
-| IP7  | Statistical readiness     | Exact 2,994/2,995 and 29,955/29,956 boundaries hold                                              | Deterministic math tests    |
-| IP8  | Quality                   | Any task-quality regression prevents promotion                                                   | Negative case tests         |
-| IP9  | Net value                 | Global and every required slice pass median and aggregate 10% net savings                        | Weighted-slice attack tests |
-| IP10 | Exact accounting          | Estimated usage, incomplete totals, or deployment drift prevents promotion                       | Schema and binding tests    |
-| IP11 | Honest provenance         | Report says `host-attested-unsigned`; documentation disclaims authentication                     | Snapshot tests              |
-| IP12 | Safe CLI                  | Exit `0` qualified, `2` unqualified, `1` malformed; manifest written only on `0`                 | CLI integration tests       |
-| IP13 | Plugin delivery           | Bundled plugin exposes the evaluator and contains no workspace dependency                        | Plugin smoke tests          |
-| IP14 | Package delivery          | `pnpm pack --dry-run` includes the new declarations/runtime and subpath import works             | Package smoke test          |
+| ID   | Requirement               | Acceptance                                                                                              | Verification                             |
+| ---- | ------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| IP1  | Contract isolation        | Compression manifests and intent-cache manifests are mutually invalid                                   | Cross-schema tests                       |
+| IP2  | Strict payload-free input | Unknown/raw fields, duplicate keys, oversized lines, and malformed values fail before evaluation        | Parser and privacy tests                 |
+| IP3  | Evidence uniqueness       | Duplicate case, trace, or quality digest prevents promotion                                             | Adversarial fixture tests                |
+| IP4  | Complete coverage         | Every required difficulty/cache cell and safety scenario meets its minimum                              | Missing-cell mutation tests              |
+| IP5  | Tier isolation            | One manifest contains exactly one tier and cannot authorize another                                     | Schema and mutation tests                |
+| IP6  | Safety                    | False, prohibited, stale, unauthorized, cross-tenant, and forbidden-effect hits are zero                | Derived counter tests                    |
+| IP7  | Statistical readiness     | Exact 2,994/2,995 and 29,955/29,956 boundaries hold                                                     | Deterministic math tests                 |
+| IP8  | Quality                   | Any task-quality regression prevents promotion                                                          | Negative case tests                      |
+| IP9  | Net value                 | Reusable slices pass 10% median/aggregate savings; mandatory-bypass slices stay within overhead ceiling | Weighted-slice and bypass-overhead tests |
+| IP10 | Exact accounting          | Estimated usage, incomplete totals, or deployment drift prevents promotion                              | Schema and binding tests                 |
+| IP11 | Honest provenance         | Report says `host-attested-unsigned`; documentation disclaims authentication                            | Snapshot tests                           |
+| IP12 | Safe CLI                  | Exit `0` qualified, `2` unqualified, `1` malformed; manifest written only on `0`                        | CLI integration tests                    |
+| IP13 | Plugin delivery           | Bundled plugin exposes the evaluator and contains no workspace dependency                               | Plugin smoke tests                       |
+| IP14 | Package delivery          | `pnpm pack --dry-run` includes the new declarations/runtime and subpath import works                    | Package smoke test                       |
 
 ## Acceptance threshold
 
