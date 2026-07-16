@@ -262,11 +262,13 @@ describe('bundled Codex plugin', () => {
 
   it('executes the intent qualification evaluator from an isolated plugin copy', async () => {
     const root = await temporaryRoot();
+    const plugin = await copyIsolatedPlugin();
     const evidencePath = join(root, 'intent-promotion-evidence.jsonl');
     const fixture = createEmptyIntentPromotionFixture();
     await writeFile(evidencePath, `${JSON.stringify(fixture.binding)}\n`);
 
-    const result = await executeBundle(
+    const result = await executeIsolatedBundle(
+      plugin,
       'intent',
       'promotion',
       'evaluate',
