@@ -1625,6 +1625,7 @@ function validateProbeOperation(
   if (
     probe.tier !== 'plan' ||
     probe.effect === 'read' ||
+    probe.operation === binding.qualifiedOperation.operation ||
     probe.domain !== binding.qualifiedOperation.domain ||
     probe.operationRegistryDigest !==
       binding.intentContract.operationRegistry.digest ||
