@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -13,19 +13,11 @@ import {
   digestHostPromotionCorpus,
 } from '../src/host/index.js';
 import { makePolicy } from './helpers.js';
+import { createEmptyIntentPromotionFixture } from './support/intent-promotion-qualification-fixture.js';
 
 const executeFile = promisify(execFile);
 const pluginRoot = fileURLToPath(
   new URL('../plugins/semwitness/', import.meta.url),
-);
-const runtimePath = fileURLToPath(
-  new URL('../plugins/semwitness/dist/cli.mjs', import.meta.url),
-);
-const skillPath = fileURLToPath(
-  new URL('../plugins/semwitness/skills/semwitness/SKILL.md', import.meta.url),
-);
-const manifestPath = fileURLToPath(
-  new URL('../plugins/semwitness/.codex-plugin/plugin.json', import.meta.url),
 );
 const temporaryRoots = new Set<string>();
 
@@ -41,15 +33,29 @@ interface FailedBundleExecution extends Error {
   readonly stderr?: string;
 }
 
+interface IsolatedPlugin {
+  readonly root: string;
+  readonly runtimePath: string;
+  readonly skillPath: string;
+  readonly manifestPath: string;
+}
+
 async function executeBundle(
+  ...arguments_: readonly string[]
+): Promise<BundleExecution> {
+  return executeIsolatedBundle(await copyIsolatedPlugin(), ...arguments_);
+}
+
+async function executeIsolatedBundle(
+  plugin: IsolatedPlugin,
   ...arguments_: readonly string[]
 ): Promise<BundleExecution> {
   try {
     const { stdout, stderr } = await executeFile(
       process.execPath,
-      [runtimePath, ...arguments_],
+      [plugin.runtimePath, ...arguments_],
       {
-        cwd: pluginRoot,
+        cwd: plugin.root,
         encoding: 'utf8',
         timeout: 10_000,
         maxBuffer: 4 * 1024 * 1024,
@@ -65,6 +71,22 @@ async function executeBundle(
       stderr: failed.stderr ?? '',
     };
   }
+}
+
+async function copyIsolatedPlugin(): Promise<IsolatedPlugin> {
+  const container = await temporaryRoot();
+  const root = join(container, 'semwitness');
+  await cp(pluginRoot, root, {
+    recursive: true,
+    force: false,
+    errorOnExist: true,
+  });
+  return {
+    root,
+    runtimePath: join(root, 'dist', 'cli.mjs'),
+    skillPath: join(root, 'skills', 'semwitness', 'SKILL.md'),
+    manifestPath: join(root, '.codex-plugin', 'plugin.json'),
+  };
 }
 
 async function temporaryRoot(): Promise<string> {
@@ -200,19 +222,23 @@ describe('bundled Codex plugin', () => {
 
     expect(result).toEqual({
       code: 0,
-      stdout: '0.5.0-alpha.2\n',
+      stdout: '0.5.0-alpha.3\n',
       stderr: '',
     });
   });
 
   it('ships the Promotion Evidence Workbench through the installed launcher', async () => {
-    const runtime = await readFile(runtimePath, 'utf8');
-    const skill = await readFile(skillPath, 'utf8');
-    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
+    const plugin = await copyIsolatedPlugin();
+    const runtime = await readFile(plugin.runtimePath, 'utf8');
+    const skill = await readFile(plugin.skillPath, 'utf8');
+    const manifest = JSON.parse(
+      await readFile(plugin.manifestPath, 'utf8'),
+    ) as {
       readonly name: string;
       readonly interface: { readonly defaultPrompt: readonly string[] };
     };
-    const { code, stdout, stderr } = await executeBundle(
+    const { code, stdout, stderr } = await executeIsolatedBundle(
+      plugin,
       'promotion',
       'evaluate',
       '--help',
@@ -229,6 +255,33 @@ describe('bundled Codex plugin', () => {
     expect(manifest.interface.defaultPrompt).toContain(
       'Evaluate this held-out promotion evidence and emit a manifest only if every gate passes.',
     );
+    expect(manifest.interface.defaultPrompt).toContain(
+      'Evaluate this payload-free intent-cache evidence and emit a shadow qualification only if every gate passes.',
+    );
+  });
+
+  it('executes the intent qualification evaluator from an isolated plugin copy', async () => {
+    const root = await temporaryRoot();
+    const evidencePath = join(root, 'intent-promotion-evidence.jsonl');
+    const fixture = createEmptyIntentPromotionFixture();
+    await writeFile(evidencePath, `${JSON.stringify(fixture.binding)}\n`);
+
+    const result = await executeBundle(
+      'intent',
+      'promotion',
+      'evaluate',
+      '--evidence',
+      evidencePath,
+      '--json',
+    );
+
+    expect(result.code).toBe(2);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      schema: 'semwitness.dev/intent-cache-promotion-workbench-result/v1alpha1',
+      qualified: false,
+      report: { activationCeiling: 'shadow-only' },
+    });
   });
 
   it('qualifies a valid held-out corpus through the installed launcher', async () => {

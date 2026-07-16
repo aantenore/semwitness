@@ -67,7 +67,7 @@ import {
   writeNewPrivateFile,
 } from './io.js';
 
-const VERSION = '0.5.0-alpha.2';
+const VERSION = '0.5.0-alpha.3';
 const ERROR_SCHEMA = 'semwitness.dev/cli-error/v1alpha1';
 const MAX_INTENT_NORMALIZER_BYTES = 4 * 1024 * 1024;
 const MAX_INTENT_COMPILER_BINDING_BYTES = 64 * 1024;

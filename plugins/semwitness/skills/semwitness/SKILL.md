@@ -1,6 +1,6 @@
 ---
 name: semwitness
-description: Use this skill when a user wants to analyze LLM context size, simulate verified semantic compression, inspect or verify a SemWitness proof bundle, retrieve a locally stored original by digest, replay compression fixtures, compile held-out promotion evidence, evaluate exact or OpenAI-compatible intent compilers, or measure token savings without transparent prompt interception.
+description: Use this skill when a user wants to analyze LLM context size, simulate verified semantic compression, inspect or verify a SemWitness proof bundle, retrieve a locally stored original by digest, replay compression fixtures, compile compression-host promotion evidence, qualify payload-free intent-cache evidence in shadow mode, evaluate exact or OpenAI-compatible intent compilers, or measure token savings without transparent prompt interception.
 ---
 
 # SemWitness
@@ -11,9 +11,11 @@ Use SemWitness as an explicit, proof-carrying semantic codec and bounded
 intent-evaluation tool for AI-agent context. It can analyze input, simulate and
 verify compression, retrieve a content-addressed original, report local-store
 statistics, replay fixtures, and test exact, consensus, or explicitly networked
-intent compilers against strict ground truth. It can also compile
-deployment-owned, payload-free held-out usage and task-quality observations into
-a host promotion manifest when every activation gate passes.
+intent compilers against strict ground truth. It can compile deployment-owned,
+payload-free held-out usage and task-quality observations into a compression-host
+promotion manifest. A separate workbench can qualify one bound intent-cache
+operation for shadow observation only; that qualification never serves a cache
+value.
 
 SemWitness is a shadow-mode tool. It does not intercept, replace, or silently rewrite Codex prompts, tool calls, or responses.
 
@@ -64,14 +66,20 @@ If the launcher reports that `dist/cli.mjs` is missing, stop and explain that th
     matching `SEMWITNESS_*`. Never place an API key in JSON, a CLI flag, chat
     output, or a report. Compiler or consensus agreement is candidate evidence,
     not semantic proof or cache authorization.
-13. Never invent, estimate, or relabel promotion evidence. Use `promotion
-evaluate` only with a deployment-owned apply-verified policy and exact
+13. Never invent, estimate, or relabel compression-host promotion evidence. Use
+    `promotion evaluate` only with a deployment-owned apply-verified policy and exact
     provider/runtime observations from at least 50 paired held-out cases, all
     four difficulty strata, cold and warm execution, at least five cases per
     stratum/cache cell, and at least ten complete cases per codec. A
     valid gate failure (exit `2`) is evidence to retain, not a reason to edit
     counters, drop failed cases, or weaken thresholds.
-14. The plugin cannot transparently replace prompt ingress. Actual token savings
+14. Keep intent-cache qualification isolated. Use `intent promotion evaluate`
+    only with deployment-owned, payload-free evidence for the exact bound
+    operation and scope. It accepts no `--policy`, emits only a shadow
+    qualification, and never authorizes serving a cached artifact. Never pass a
+    compression-host manifest to this boundary or describe the two workbenches
+    as interchangeable.
+15. The plugin cannot transparently replace prompt ingress. Actual token savings
     require a visible Codex SDK/App Server integration or gateway that applies a
     separately admitted candidate before the provider call.
 
@@ -160,6 +168,23 @@ failure. Treat the result as `host-attested-unsigned`: it validates
 deterministic bindings and math, but cannot prove that the corpus was held out
 or that the host, provider, or task oracle was honest.
 
+Evaluate deployment-owned intent-cache evidence for a shadow qualification:
+
+```bash
+node <plugin-root>/scripts/semwitness.mjs intent promotion evaluate \
+  --evidence <strict-payload-free-jsonl> \
+  --manifest-out <new-private-shadow-qualification> \
+  --json
+```
+
+Do not add `--policy`: this workbench binds its own intent, operation, scope,
+dependency, sampling, accounting, and cost contracts. Exit `0` means every
+safety, completeness, coverage, net-value, adversarial, and overhead gate passed
+and the optional new private manifest was written. Exit `2` means valid evidence
+failed one or more gates and no manifest was written. Exit `1` means malformed,
+I/O, no-clobber, or internal failure. The result is content-free,
+`host-attested-unsigned`, and `shadow-only`; it cannot activate cache delivery.
+
 Evaluate a declarative intent normalizer without serving cache values:
 
 ```bash
@@ -217,6 +242,14 @@ aggregate and per-case latency/regression failures, corpus completeness,
 coverage, duplicate-evidence counts, unsafe accepts, task regressions, and
 whether a manifest was emitted. Do not expose paths, prompts, responses, case
 IDs, raw provider payloads, or provider error text.
+
+For intent-cache promotion evaluation, report population and adversarial
+completeness, separate false-discovery/unsafe-admission/false-miss estimands,
+normalized-intent operation coverage, global and critical-cell net value,
+mandatory-bypass overhead, phenomenon coverage, truth-table failures, stable
+gate reasons, and whether a shadow qualification was emitted. Do not confuse
+exact-source reuse with semantic reuse, expose case payloads, or imply that a
+qualified shadow manifest can serve a cached artifact.
 
 For intent evaluation, report exact-intent accuracy, bypass accuracy, unsafe
 accepts, repeatability failures, equivalent-pair convergence, and distinct-pair
