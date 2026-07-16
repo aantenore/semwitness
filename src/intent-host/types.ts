@@ -1,5 +1,11 @@
 import type { Sha256Digest } from '../domain/types.js';
-import type { NormalizerBinding, OntologyBinding } from '../intent/types.js';
+import type {
+  CacheKeyDigest,
+  HmacIntentSourceDigest,
+  IntentEffect,
+  NormalizerBinding,
+  OntologyBinding,
+} from '../intent/types.js';
 
 export const INTENT_CACHE_PROMOTION_EVIDENCE_SCHEMA =
   'semwitness.dev/intent-cache-promotion-evidence/v1alpha1' as const;
@@ -9,6 +15,12 @@ export const INTENT_CACHE_PROMOTION_WORKBENCH_RESULT_SCHEMA =
   'semwitness.dev/intent-cache-promotion-workbench-result/v1alpha1' as const;
 export const INTENT_CACHE_SHADOW_QUALIFICATION_SCHEMA =
   'semwitness.dev/intent-cache-shadow-qualification/v1alpha1' as const;
+export const INTENT_CACHE_OPERATION_BINDING_SCHEMA =
+  'semwitness.dev/intent-cache-operation-binding/v1alpha1' as const;
+export const INTENT_CACHE_LOOKUP_RECEIPT_SCHEMA =
+  'semwitness.dev/intent-cache-lookup-receipt/v1alpha1' as const;
+export const INTENT_NORMALIZATION_BYPASS_RECEIPT_SCHEMA =
+  'semwitness.dev/intent-normalization-bypass-receipt/v1alpha1' as const;
 
 /** The v1alpha1 qualification schema deliberately accepts only plan evidence. */
 export const INTENT_CACHE_PROMOTION_TIERS = ['plan'] as const;
@@ -173,6 +185,112 @@ export interface IntentCacheDependencyInventory {
   readonly freshness: IntentCacheDependencyBinding;
   readonly invalidation: IntentCacheDependencyBinding;
   readonly key: IntentCacheDependencyBinding;
+}
+
+export interface UnsignedIntentCacheOperationBinding {
+  readonly schema: typeof INTENT_CACHE_OPERATION_BINDING_SCHEMA;
+  readonly operation: IntentCacheOperationHmac;
+  readonly domain: IntentCacheDomainHmac;
+  readonly intentDigest: Sha256Digest;
+  readonly tier: 'plan';
+  readonly effect: IntentEffect;
+  readonly operationRegistryDigest: Sha256Digest;
+  readonly ontologyDigest: Sha256Digest;
+}
+
+export interface IntentCacheOperationBinding extends UnsignedIntentCacheOperationBinding {
+  readonly bindingDigest: Sha256Digest;
+}
+
+export const INTENT_CACHE_ACCOUNTING_COMPLETENESS = [
+  'complete',
+  'incomplete',
+] as const;
+export type IntentCacheAccountingCompleteness =
+  (typeof INTENT_CACHE_ACCOUNTING_COMPLETENESS)[number];
+export type IntentCacheAccountingBinding =
+  | {
+      readonly completeness: 'complete';
+    }
+  | {
+      readonly completeness: 'incomplete';
+      readonly failureDigest: Sha256Digest;
+    };
+
+export type IntentCacheLookupDisposition =
+  | {
+      readonly outcome: 'miss';
+      readonly reason: 'NO_CANDIDATE_FOUND';
+      readonly storeAccess: 'attempted';
+    }
+  | {
+      readonly outcome: 'policy-bypass';
+      readonly reason:
+        'ALPHA_EFFECT_FORBIDDEN' | 'POLICY_DENY' | 'NORMALIZATION_INELIGIBLE';
+      readonly storeAccess: 'not-attempted';
+    }
+  | {
+      readonly outcome: 'store-fault';
+      readonly reason: 'EXPECTED_STORE_FAULT';
+      readonly storeAccess: 'attempted';
+    }
+  | {
+      readonly outcome: 'timeout';
+      readonly reason: 'LOOKUP_TIMEOUT';
+      readonly storeAccess: 'attempted';
+    }
+  | {
+      readonly outcome: 'fallback';
+      readonly reason: 'LOOKUP_FALLBACK';
+      readonly storeAccess: 'attempted';
+    };
+
+export interface IntentCacheLookupReceiptBase {
+  readonly schema: typeof INTENT_CACHE_LOOKUP_RECEIPT_SCHEMA;
+  readonly mode: 'shadow';
+  readonly applied: false;
+  readonly sourceDigest: HmacIntentSourceDigest;
+  readonly normalizer: NormalizerBinding;
+  readonly ontology: OntologyBinding;
+  readonly normalizationPolicyDigest: Sha256Digest;
+  readonly cacheAdmissionPolicyDigest: Sha256Digest;
+  readonly cacheKeyDigest: CacheKeyDigest;
+  readonly observedOperationBinding: IntentCacheOperationBinding;
+  readonly candidateIndex: IntentCacheDependencyBinding;
+  readonly store: IntentCacheDependencyBinding;
+  readonly accounting: IntentCacheAccountingBinding;
+}
+
+export type UnsignedIntentCacheLookupReceipt = IntentCacheLookupReceiptBase &
+  IntentCacheLookupDisposition;
+
+export type IntentCacheLookupReceipt = UnsignedIntentCacheLookupReceipt & {
+  readonly receiptDigest: Sha256Digest;
+};
+
+export const INTENT_NORMALIZATION_BYPASS_REASONS = [
+  'INTENT_NO_MATCH',
+  'INTENT_COMPILER_FAILURE',
+  'INTENT_REGISTRY_MISMATCH',
+] as const;
+export type IntentNormalizationBypassReason =
+  (typeof INTENT_NORMALIZATION_BYPASS_REASONS)[number];
+
+export interface UnsignedIntentNormalizationBypassReceipt {
+  readonly schema: typeof INTENT_NORMALIZATION_BYPASS_RECEIPT_SCHEMA;
+  readonly mode: 'shadow';
+  readonly applied: false;
+  readonly sourceDigest: HmacIntentSourceDigest;
+  readonly normalizer: NormalizerBinding;
+  readonly ontology: OntologyBinding;
+  readonly normalizationPolicyDigest: Sha256Digest;
+  readonly cacheAdmissionPolicyDigest: Sha256Digest;
+  readonly reason: IntentNormalizationBypassReason;
+  readonly accounting: IntentCacheAccountingBinding;
+}
+
+export interface IntentNormalizationBypassReceipt extends UnsignedIntentNormalizationBypassReceipt {
+  readonly receiptDigest: Sha256Digest;
 }
 
 export interface IntentCacheQualifiedOperation {
