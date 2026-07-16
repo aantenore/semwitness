@@ -156,19 +156,25 @@ these strict schemas,
 cross-checks bindings and decisions, and never accepts an isolated opaque
 witness digest as proof.
 
-Candidate origin is derived rather than trusted. Candidate cases carry
-domain-separated `entrySourceHmac` and `lookupSourceHmac`; the latter must equal
-the normalization witness source digest. Equality means `exact-source` and
-inequality means `normalized-intent`. Plain source SHA-256 is rejected at this
-host boundary. Miss and bypass are separately derived dispositions, never
-values of the origin field.
+Candidate origin is derived rather than trusted. Because the core cache-entry
+envelope intentionally does not contain a source identifier, candidate cases
+carry a separate digest-bound `entrySourceBinding` over the entry digest, value
+digest, domain-separated entry-source HMAC, and binding digest. The lookup
+source HMAC must equal the full normalization witness source digest. Equality
+between the bound entry and lookup source HMACs means `exact-source`; inequality
+means `normalized-intent`. The entry and value digests must also cross-link the
+cache-hit witness. Plain source SHA-256 is rejected at this host boundary. Miss
+and bypass are separately derived dispositions, never values of the origin
+field.
 
-A normalized-no-candidate path enters a semantic denominator only when its
-reference artifact, reference entry-source HMAC, and reference operation
-binding are all present and cross-linked. Source equality is exact and excluded;
-source inequality is a normalized-intent opportunity. A path without the full
-reference is diagnostic/value evidence only. Normalization-bypass paths never
-enter semantic denominators because no observed typed intent exists.
+A normalized-no-candidate path carries one closed reference union: either
+`{ kind: "none" }` or a fully attested reference containing the artifact digest,
+entry-source HMAC, and operation binding. Independent optional reference fields
+are malformed. Only the fully attested, cross-linked variant can enter a
+semantic denominator. Source equality is exact and excluded; source inequality
+is a normalized-intent opportunity. `kind: "none"` requires artifact relation
+`not-comparable` and is diagnostic/value evidence only. Normalization-bypass
+paths never enter semantic denominators because no observed typed intent exists.
 
 Every normalized path also carries a content-free operation binding over
 operation HMAC, domain HMAC, intent digest, effect, registry digest, ontology
@@ -226,9 +232,14 @@ the candidate fails closed and the ordinary path succeeds.
 
 `side-effect` conformance uses a normalized-no-candidate lookup receipt with
 `outcome: "policy-bypass"` and reason `ALPHA_EFFECT_FORBIDDEN` before store
-access. Its operation binding carries `write` or `irreversible`. A
-candidate-bearing eligible side-effect record is well-formed evidence but fails
-the conformance gate.
+access. It carries a separately bound conformance-only `probeOperation` with
+effect `write` or `irreversible`; it does not pretend that the qualified read
+operation changed effect. The probe may use a different operation HMAC, but it
+must retain the bound domain, ontology, and operation-registry contracts. It is
+excluded from qualification scope, population/statistical denominators, and
+reusable-value denominators; it remains mandatory in the side-effect truth-table
+and overhead gates. A candidate-bearing eligible side-effect record is
+well-formed evidence but fails the conformance gate.
 
 ## Qualification scope
 
@@ -237,9 +248,13 @@ The strict shadow qualification manifest binds:
 - `activationCeiling: "shadow-only"`, validity interval, and revocation ID;
 - exactly `tier: "plan"` and `effect: "read"` for the alpha;
 - `candidateOrigin: "normalized-intent"` only;
-- exactly one operation HMAC and one domain HMAC proven by the population and
-  adversarial samples for this alpha; multi-operation qualification requires a
-  later schema with an explicit multiple-comparison policy;
+- exactly one qualified read-operation HMAC and one domain HMAC proven by the
+  population and every ordinary adversarial scenario for this alpha. The
+  side-effect scenario instead uses exactly one separately named
+  conformance-only probe operation with the same domain/registry/ontology
+  contracts and a `write` or `irreversible` effect; it can never enter the
+  allowlist. Multi-operation qualification requires a later schema with an
+  explicit multiple-comparison policy;
 - Intent IR schema, ontology, normalizer, operation registry, resolver,
   normalization policy, and cache-admission policy;
 - a structured tier dependency inventory rather than only a caller-selected
@@ -282,10 +297,12 @@ provider/runtime counters:
 The evaluator rejects zero baseline denominators and uses `BigInt` for totals.
 It reports both median per-case paired ratios and ratio-of-sums. All population
 misses, bypasses, faults, and failures participate in workload net value.
-Failure records carry every actually observed counter plus
-`accountingCompleteness: "complete" | "incomplete"`. The evaluator never
-imputes missing usage. Any incomplete pair makes value status `unavailable`, and
-any population failure blocks qualification regardless of accounting status.
+Usage is a closed union. Complete usage carries every counter as a bounded
+non-negative safe integer. Incomplete usage still carries every counter key,
+using `number | null` to distinguish observed from unavailable values plus a
+failure digest; omission and imputation are forbidden. Failure records carry
+the same union. Any incomplete pair makes value status `unavailable`, and any
+population failure blocks qualification regardless of accounting status.
 
 Oracle-permitted normalized-intent reusable population slices require at least
 10% median and aggregate net savings globally and in all eight evaluator-owned
@@ -346,13 +363,16 @@ semwitness.dev/intent-normalization-bypass-receipt/v1alpha1
 ```
 
 The strict JSONL contains one binding followed by contiguous ordered population
-cases and then contiguous ordered adversarial cases. Closed record variants are
+cases and then contiguous ordered adversarial cases. Ordinals must be exactly
+`0..attempted-1` and `0..expected-1` in input order; the parser never sorts or
+normalizes evidence before recomputing the ordered corpus digests. Closed record variants are
 `population-complete`, `population-failure`, `adversarial-complete`, and
 `adversarial-failure`; each complete record contains exactly one of the three
 execution paths above. Population is exactly plan/read. Adversarial evidence is
-still plan-tier but may use write or irreversible effects only to prove the
-`side-effect` mandatory bypass. Observation and response are malformed in every
-cohort. Every runtime decision remains `mode: "shadow"` and `applied: false`.
+still plan-tier and uses the qualified read operation except that `side-effect`
+uses the bound conformance-only write/irreversible probe described above.
+Observation and response are malformed in every cohort. Every runtime decision
+remains `mode: "shadow"` and `applied: false`.
 
 Limits are 50,000 cases, 256 KiB per line, and 128 MiB per document. The plan
 alpha fits within this bounded in-memory parser. A later observation or response
@@ -429,26 +449,26 @@ tool, policy, resolver, and invalidation drift.
 
 ## Acceptance criteria
 
-| ID   | Requirement               | Acceptance                                                                                                               | Verification                  |
-| ---- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------- |
-| IP1  | Contract isolation        | Compression manifests and intent-cache qualification are mutually invalid                                                | Cross-schema tests            |
-| IP2  | Strict payload-free input | Unknown/raw fields, duplicate keys, oversized lines, sparse/accessor values, and malformed Unicode fail                  | Parser/privacy tests          |
-| IP3  | Population completeness   | Attempted equals emitted, dropped is zero, source-log root/counters bind, and any explicit population failure blocks     | Selective-reporting tests     |
-| IP4  | Independent denominator   | Cluster HMACs are unique; exact/adversarial/repeated trials cannot pad semantic bounds                                   | Denominator attack tests      |
-| IP5  | Explicit estimands        | FDR, unsafe-admission rate, and false-miss rate retain separate denominators                                             | Metric truth-table tests      |
-| IP6  | Adversarial intersections | Every scenario × difficulty × cache cell meets its minimum and never enters statistical n                                | Missing/intersection tests    |
-| IP7  | Safety truth table        | Only the complete safe conjunction may would-hit; every unknown/not-comparable state fails                               | Exhaustive truth-table tests  |
-| IP8  | Statistical boundary      | Exact 2,994/2,995 plan boundary holds for both safety estimands; future response-boundary math remains exact             | Deterministic boundary tests  |
-| IP9  | Scoped qualification      | Read-only plan tier, one operation/domain, every dependency slot, validity and revocation are bound                      | Manifest mutation tests       |
-| IP10 | Useful coverage           | The one qualified operation has 25 independent hits and 10% semantic coverage                                            | No-op/partial-operation tests |
-| IP11 | Net value                 | Global and critical reusable intersections pass median, ratio-of-sums, p10, and per-case gates                           | Weighted/Simpson attack tests |
-| IP12 | Fail-closed overhead      | Mandatory-bypass/fault intersections stay within cost/latency overhead ceilings                                          | Fault/overhead tests          |
-| IP13 | Honest provenance         | Output is unsigned and structurally shadow-only; future active parsers reject it                                         | Snapshot/cross-mode tests     |
-| IP14 | Safe CLI                  | Exit `0/2/1` is stable and a new private manifest exists only on `0`                                                     | CLI and I/O fault tests       |
-| IP15 | Plugin delivery           | Bundled plugin exposes the evaluator without workspace dependencies                                                      | Isolated plugin smoke         |
-| IP16 | Package delivery          | Installed tarball resolves `semwitness/intent/host` declarations and runtime                                             | Pack-install smoke            |
-| IP17 | Derived identity          | Source relation and operation/domain scope are recomputed from HMACs, witnesses and binding digests, never caller labels | Origin/scope-inflation tests  |
-| IP18 | Cohort semantics          | Population is plan/read; side-effect adversarial cases may be write/irreversible only to prove mandatory bypass          | Cohort mutation tests         |
+| ID   | Requirement               | Acceptance                                                                                                                              | Verification                  |
+| ---- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| IP1  | Contract isolation        | Compression manifests and intent-cache qualification are mutually invalid                                                               | Cross-schema tests            |
+| IP2  | Strict payload-free input | Unknown/raw fields, duplicate keys, oversized lines, sparse/accessor values, and malformed Unicode fail                                 | Parser/privacy tests          |
+| IP3  | Population completeness   | Attempted equals emitted, dropped is zero, source-log root/counters bind, and any explicit population failure blocks                    | Selective-reporting tests     |
+| IP4  | Independent denominator   | Cluster HMACs are unique; exact/adversarial/repeated trials cannot pad semantic bounds                                                  | Denominator attack tests      |
+| IP5  | Explicit estimands        | FDR, unsafe-admission rate, and false-miss rate retain separate denominators                                                            | Metric truth-table tests      |
+| IP6  | Adversarial intersections | Every scenario × difficulty × cache cell meets its minimum and never enters statistical n                                               | Missing/intersection tests    |
+| IP7  | Safety truth table        | Only the complete safe conjunction may would-hit; every unknown/not-comparable state fails                                              | Exhaustive truth-table tests  |
+| IP8  | Statistical boundary      | Exact 2,994/2,995 plan boundary holds for both safety estimands; future response-boundary math remains exact                            | Deterministic boundary tests  |
+| IP9  | Scoped qualification      | Read-only plan tier, one operation/domain, every dependency slot, validity and revocation are bound                                     | Manifest mutation tests       |
+| IP10 | Useful coverage           | The one qualified operation has 25 independent hits and 10% semantic coverage                                                           | No-op/partial-operation tests |
+| IP11 | Net value                 | Global and critical reusable intersections pass median, ratio-of-sums, p10, and per-case gates                                          | Weighted/Simpson attack tests |
+| IP12 | Fail-closed overhead      | Mandatory-bypass/fault intersections stay within cost/latency overhead ceilings                                                         | Fault/overhead tests          |
+| IP13 | Honest provenance         | Output is unsigned and structurally shadow-only; future active parsers reject it                                                        | Snapshot/cross-mode tests     |
+| IP14 | Safe CLI                  | Exit `0/2/1` is stable and a new private manifest exists only on `0`                                                                    | CLI and I/O fault tests       |
+| IP15 | Plugin delivery           | Bundled plugin exposes the evaluator without workspace dependencies                                                                     | Isolated plugin smoke         |
+| IP16 | Package delivery          | Installed tarball resolves `semwitness/intent/host` declarations and runtime                                                            | Pack-install smoke            |
+| IP17 | Derived identity          | Source relation and operation/domain scope are recomputed from HMACs, witnesses and binding digests, never caller labels                | Origin/scope-inflation tests  |
+| IP18 | Cohort semantics          | Population and ordinary adversarial cases use the qualified plan/read operation; side-effect uses a scoped-out write/irreversible probe | Cohort mutation tests         |
 
 ## Acceptance threshold
 
