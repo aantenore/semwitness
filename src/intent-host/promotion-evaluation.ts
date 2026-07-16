@@ -29,6 +29,7 @@ import {
   INTENT_CACHE_PROMOTION_CACHE_REGIMES,
   INTENT_CACHE_PROMOTION_DIFFICULTIES,
   INTENT_CACHE_PROMOTION_EVALUATION_REPORT_SCHEMA,
+  INTENT_CACHE_PROMOTION_PHENOMENA,
   INTENT_CACHE_PROMOTION_WORKBENCH_RESULT_SCHEMA,
   INTENT_CACHE_REQUIRED_ADVERSARIAL_SCENARIOS,
   INTENT_CACHE_SHADOW_QUALIFICATION_SCHEMA,
@@ -41,19 +42,26 @@ import {
   type IntentCacheEffectTierOracleState,
   type IntentCacheFreshnessOracleState,
   type IntentCacheNoCandidateOracle,
+  type IntentCacheOperationBinding,
   type IntentCachePolicyOracleState,
   type IntentCachePopulationEvidenceCase,
   type IntentCachePromotionCacheRegime,
   type IntentCachePromotionCompletePath,
   type IntentCachePromotionDifficulty,
   type IntentCachePromotionEvidenceCase,
+  type IntentCachePromotionEvidenceBinding,
   type IntentCachePromotionEvidenceFixture,
+  type IntentCachePromotionPhenomenon,
   type IntentCachePromotionSourceRelation,
   type IntentCacheRequiredAdversarialScenario,
   type IntentCacheScopeOracleState,
   type IntentCacheShadowQualificationManifest,
   type IntentCacheTaskQualityOracleState,
 } from './types.js';
+import {
+  parseIntentCachePromotionEvidenceFixture,
+  parseIntentCachePromotionEvidenceJsonl,
+} from './promotion-evidence.js';
 
 export const INTENT_CACHE_PROMOTION_EVALUATOR_ARTIFACT = Object.freeze({
   id: 'semwitness-intent-cache-promotion-evaluator',
@@ -85,6 +93,7 @@ export const INTENT_CACHE_PROMOTION_GATE_REASONS = [
   'ADVERSARIAL_INCOMPLETE',
   'ADVERSARIAL_FAILURES',
   'ADVERSARIAL_CELL_CASES_BELOW_MINIMUM',
+  'ADVERSARIAL_PHENOMENA_MISSING',
   'ADVERSARIAL_TRUTH_TABLE_VIOLATIONS',
   'STORE_FAULT_FAIL_CLOSED_VIOLATION',
   'SIDE_EFFECT_POLICY_BYPASS_VIOLATION',
@@ -188,6 +197,11 @@ export interface IntentCachePromotionEvaluationReport {
     readonly requiredIntersections: number;
     readonly truthTableViolations: number;
     readonly unexpectedExecutionFailures: number;
+    readonly phenomenonCoverage: {
+      readonly required: readonly IntentCachePromotionPhenomenon[];
+      readonly observed: readonly IntentCachePromotionPhenomenon[];
+      readonly missing: readonly IntentCachePromotionPhenomenon[];
+    };
     readonly intersections: readonly AdversarialCellReport[];
   };
   readonly mandatoryBypassOverhead: MandatoryBypassOverheadSummary;
@@ -235,13 +249,25 @@ interface CaseDerivation {
   readonly oracle: OracleFacts | null;
 }
 
+type SideEffectAdversarialCompleteCase = IntentCacheAdversarialCompleteCase & {
+  readonly primaryScenario: 'side-effect';
+  readonly probeOperation: IntentCacheOperationBinding;
+};
+
 const MAX_FAILURE_REFS_PER_REASON = 20;
 
-/**
- * Evaluate an already strict-parsed fixture. The public package wrapper calls
- * the strict fixture parser before entering this derivation boundary.
- */
+/** Parse untrusted JSONL bytes/text or an object fixture before evaluation. */
 export function evaluateIntentCachePromotionEvidence(
+  source: unknown,
+): IntentCachePromotionWorkbenchResult {
+  const fixture =
+    typeof source === 'string' || source instanceof Uint8Array
+      ? parseIntentCachePromotionEvidenceJsonl(source)
+      : parseIntentCachePromotionEvidenceFixture(source);
+  return evaluateParsedIntentCachePromotionEvidence(fixture);
+}
+
+function evaluateParsedIntentCachePromotionEvidence(
   fixture: IntentCachePromotionEvidenceFixture,
 ): IntentCachePromotionWorkbenchResult {
   const populationCases = fixture.cases.filter(isPopulationCase);
@@ -375,6 +401,7 @@ export function evaluateIntentCachePromotionEvidence(
   );
 
   const adversarialAnalysis = buildAdversarialIntersections(
+    fixture.binding,
     adversarialCases,
     failureRefs,
   );
@@ -445,6 +472,9 @@ export function evaluateIntentCachePromotionEvidence(
   addValueGateReasons(gateSet, globalValue, criticalIntersections);
   if (!adversarialCompleteContract) gateSet.add('ADVERSARIAL_INCOMPLETE');
   if (adversarialFailures.length > 0) gateSet.add('ADVERSARIAL_FAILURES');
+  if (adversarialAnalysis.missingPhenomena.length > 0) {
+    gateSet.add('ADVERSARIAL_PHENOMENA_MISSING');
+  }
   addAdversarialGateReasons(
     gateSet,
     adversarialAnalysis.intersections,
@@ -516,6 +546,11 @@ export function evaluateIntentCachePromotionEvidence(
         REQUIRED_INTENT_CACHE_QUALIFICATION_ADVERSARIAL_INTERSECTIONS,
       truthTableViolations: adversarialAnalysis.truthTableViolations,
       unexpectedExecutionFailures: adversarialAnalysis.unexpectedFailures,
+      phenomenonCoverage: {
+        required: INTENT_CACHE_PROMOTION_PHENOMENA,
+        observed: adversarialAnalysis.observedPhenomena,
+        missing: adversarialAnalysis.missingPhenomena,
+      },
       intersections: adversarialAnalysis.intersections,
     },
     mandatoryBypassOverhead,
@@ -681,6 +716,7 @@ function buildCriticalIntersections(
 }
 
 function buildAdversarialIntersections(
+  binding: IntentCachePromotionEvidenceBinding,
   cases: readonly IntentCacheAdversarialEvidenceCase[],
   failureRefs: Map<IntentCachePromotionGateReason, Sha256Digest[]>,
 ): {
@@ -689,6 +725,8 @@ function buildAdversarialIntersections(
   readonly storeFaultViolations: number;
   readonly sideEffectViolations: number;
   readonly unexpectedFailures: number;
+  readonly observedPhenomena: readonly IntentCachePromotionPhenomenon[];
+  readonly missingPhenomena: readonly IntentCachePromotionPhenomenon[];
 } {
   let truthTableViolations = 0;
   let storeFaultViolations = 0;
@@ -711,7 +749,7 @@ function buildAdversarialIntersections(
         );
         let cellTruthViolations = 0;
         for (const item of complete) {
-          const pass = adversarialTruthTablePass(item);
+          const pass = adversarialTruthTablePass(binding, item);
           if (!pass) {
             cellTruthViolations += 1;
             truthTableViolations += 1;
@@ -764,16 +802,25 @@ function buildAdversarialIntersections(
       }
     }
   }
+  const observedPhenomena = INTENT_CACHE_PROMOTION_PHENOMENA.filter(
+    (phenomenon) => cases.some((item) => item.phenomena.includes(phenomenon)),
+  );
+  const missingPhenomena = INTENT_CACHE_PROMOTION_PHENOMENA.filter(
+    (phenomenon) => !observedPhenomena.includes(phenomenon),
+  );
   return Object.freeze({
     intersections: Object.freeze(intersections),
     truthTableViolations,
     storeFaultViolations,
     sideEffectViolations,
     unexpectedFailures,
+    observedPhenomena,
+    missingPhenomena,
   });
 }
 
 function adversarialTruthTablePass(
+  binding: IntentCachePromotionEvidenceBinding,
   item: IntentCacheAdversarialCompleteCase,
 ): boolean {
   const derived = deriveCompleteCase(item.path);
@@ -787,6 +834,7 @@ function adversarialTruthTablePass(
   }
   if (item.primaryScenario === 'side-effect') {
     return (
+      sideEffectProbeIsCoherent(binding, item) &&
       item.storeFault.kind === 'not-injected' &&
       item.path.kind === 'normalized-no-candidate' &&
       item.path.lookupReceipt.outcome === 'policy-bypass' &&
@@ -810,8 +858,10 @@ function adversarialTruthTablePass(
   }
   if (
     item.storeFault.kind !== 'not-injected' ||
+    item.path.kind !== 'candidate-bearing' ||
     derived.sourceRelation !== 'normalized-intent' ||
     derived.wouldHit ||
+    !derived.unsafeOpportunity ||
     derived.oracle === null
   ) {
     return false;
@@ -842,6 +892,53 @@ function adversarialTruthTablePass(
     default:
       return false;
   }
+}
+
+function sideEffectProbeIsCoherent(
+  binding: IntentCachePromotionEvidenceBinding,
+  item: IntentCacheAdversarialCompleteCase,
+): boolean {
+  if (item.primaryScenario !== 'side-effect') return false;
+  const probe = (
+    item as IntentCacheAdversarialCompleteCase & {
+      readonly probeOperation?: IntentCacheOperationBinding | null;
+    }
+  ).probeOperation;
+  if (
+    probe === undefined ||
+    probe === null ||
+    probe.tier !== 'plan' ||
+    (probe.effect !== 'write' && probe.effect !== 'irreversible') ||
+    probe.operation === binding.qualifiedOperation.operation ||
+    probe.domain !== binding.qualifiedOperation.domain ||
+    probe.operationRegistryDigest !==
+      binding.intentContract.operationRegistry.digest ||
+    probe.ontologyDigest !== binding.intentContract.ontology.digest ||
+    item.path.kind !== 'normalized-no-candidate'
+  ) {
+    return false;
+  }
+  return sameOperationBinding(
+    probe,
+    item.path.lookupReceipt.observedOperationBinding,
+  );
+}
+
+function sameOperationBinding(
+  left: SideEffectAdversarialCompleteCase['probeOperation'],
+  right: SideEffectAdversarialCompleteCase['probeOperation'],
+): boolean {
+  return (
+    left.schema === right.schema &&
+    left.operation === right.operation &&
+    left.domain === right.domain &&
+    left.intentDigest === right.intentDigest &&
+    left.tier === right.tier &&
+    left.effect === right.effect &&
+    left.operationRegistryDigest === right.operationRegistryDigest &&
+    left.ontologyDigest === right.ontologyDigest &&
+    left.bindingDigest === right.bindingDigest
+  );
 }
 
 function summarizeWorstOverhead(

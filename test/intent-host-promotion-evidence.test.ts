@@ -1422,6 +1422,26 @@ describe('intent-cache promotion usage and cohort cross-links', () => {
           recomputeIntentCacheOperationBindingDigest(item.probeOperation);
       }
     });
+    expectMutationRejected((value) => {
+      const item = value.cases[4];
+      if (
+        item?.kind !== 'adversarial-complete' ||
+        item.primaryScenario !== 'side-effect' ||
+        item.path.kind !== 'normalized-no-candidate'
+      ) {
+        throw new TypeError('fixture shape changed');
+      }
+      item.probeOperation.operation = OPERATION;
+      item.probeOperation.bindingDigest =
+        recomputeIntentCacheOperationBindingDigest(item.probeOperation);
+      item.path.lookupReceipt.observedOperationBinding.operation = OPERATION;
+      item.path.lookupReceipt.observedOperationBinding.bindingDigest =
+        recomputeIntentCacheOperationBindingDigest(
+          item.path.lookupReceipt.observedOperationBinding,
+        );
+      item.path.lookupReceipt.receiptDigest =
+        recomputeIntentCacheLookupReceiptDigest(item.path.lookupReceipt);
+    });
   });
 
   it('rejects contradictions between store-fault facts, receipts, and scenarios', () => {

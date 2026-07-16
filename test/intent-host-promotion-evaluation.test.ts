@@ -1,139 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
-import { sha256 } from '../src/domain/hash.js';
 import {
   INTENT_CACHE_PROMOTION_GATE_REASONS,
   evaluateIntentCachePromotionEvidence,
-} from '../src/intent-host/promotion-evaluation.js';
-import type {
-  IntentCacheAdversarialCompleteCase,
-  IntentCachePopulationCompleteCase,
-  IntentCachePromotionCompleteUsageObservation,
-  IntentCachePromotionEvidenceBinding,
-  IntentCachePromotionEvidenceFixture,
-  IntentCachePromotionUsagePair,
-} from '../src/intent-host/types.js';
-
-function binding(
-  population: number,
-  adversarial: number,
-): IntentCachePromotionEvidenceBinding {
-  return {
-    bindingDigest: sha256('binding'),
-    population: {
-      attempted: population,
-      emitted: population,
-      complete: population,
-      failed: 0,
-      dropped: 0,
-    },
-    adversarial: {
-      expected: adversarial,
-      emitted: adversarial,
-      complete: adversarial,
-      failed: 0,
-    },
-  } as IntentCachePromotionEvidenceBinding;
-}
-
-function observation(
-  label: string,
-  overrides: Partial<IntentCachePromotionCompleteUsageObservation> = {},
-): IntentCachePromotionCompleteUsageObservation {
-  return {
-    completeness: 'complete',
-    traceDigest: sha256(`trace:${label}`),
-    physicalInputTokens: 100,
-    providerPrefixCacheReadInputTokens: 0,
-    providerPrefixCacheWriteInputTokens: 0,
-    applicationSemanticCacheLookups: 1,
-    applicationSemanticCacheReads: 0,
-    applicationSemanticCacheWrites: 0,
-    applicationSemanticCacheInvalidations: 0,
-    outputTokens: 10,
-    reasoningTokens: 0,
-    normalizedCostUnits: 100,
-    allocatedInvalidationCostUnits: 0,
-    endToEndLatencyMicros: 100,
-    normalizerLatencyMicros: 1,
-    candidateIndexLatencyMicros: 1,
-    storeLatencyMicros: 1,
-    lookupLatencyMicros: 1,
-    verifierLatencyMicros: 1,
-    fallbackLatencyMicros: 0,
-    toolCalls: 0,
-    attempts: 1,
-    retries: 0,
-    recoveries: 0,
-    ...overrides,
-  };
-}
-
-function usage(label: string): IntentCachePromotionUsagePair {
-  return {
-    costModelDigest: sha256('cost-model'),
-    currencyUnitDigest: sha256('currency'),
-    accounting: { completeness: 'complete' },
-    ordinary: observation(`${label}:ordinary`),
-    candidate: observation(`${label}:candidate`, {
-      physicalInputTokens: 80,
-      normalizedCostUnits: 80,
-    }),
-  };
-}
-
-function unsafePopulationCase(): IntentCachePopulationCompleteCase {
-  return {
-    kind: 'population-complete',
-    clusterHmac: `hmac-sha256:cluster:${'1'.repeat(64)}`,
-    difficulty: 'simple',
-    cacheRegime: 'cold',
-    usage: usage('unsafe'),
-    caseDigest: sha256('unsafe-case'),
-    storeFault: { kind: 'not-injected' },
-    path: {
-      kind: 'candidate-bearing',
-      normalizationWitness: {
-        sourceDigest: `hmac-sha256:intent-source:${'2'.repeat(64)}`,
-      },
-      entrySourceBinding: {
-        entrySourceHmac: `hmac-sha256:intent-source:${'3'.repeat(64)}`,
-      },
-      cacheHitWitness: { decision: { verdict: 'eligible' } },
-      oracle: {
-        kind: 'candidate',
-        artifactRelation: 'different',
-        scope: 'match',
-        authorization: 'current-allow',
-        freshness: 'fresh',
-        effectTier: 'allowed',
-        policy: 'allow',
-        taskQuality: 'pass',
-      },
-    },
-  } as IntentCachePopulationCompleteCase;
-}
-
-function invalidSideEffectCase(): IntentCacheAdversarialCompleteCase {
-  return {
-    kind: 'adversarial-complete',
-    primaryScenario: 'side-effect',
-    phenomena: [],
-    difficulty: 'simple',
-    cacheRegime: 'cold',
-    usage: usage('side-effect'),
-    caseDigest: sha256('side-effect-case'),
-    storeFault: { kind: 'not-injected' },
-    path: unsafePopulationCase().path,
-  } as unknown as IntentCacheAdversarialCompleteCase;
-}
+  parseIntentCacheShadowQualificationManifest,
+} from '../src/intent-host/index.js';
+import {
+  createDistinctIntentPromotionFixture,
+  createEmptyIntentPromotionFixture,
+  createQualifyingIntentPromotionFixture,
+  createSideEffectIntentPromotionFixture,
+  createUnsafeHitIntentPromotionFixture,
+} from './support/intent-promotion-qualification-fixture.js';
 
 describe('intent cache promotion evaluation', () => {
   it('materializes every fixed cell and returns stable ordered gate failures', () => {
-    const fixture: IntentCachePromotionEvidenceFixture = {
-      binding: binding(0, 0),
-      cases: [],
-    };
+    const fixture = createEmptyIntentPromotionFixture();
     const first = evaluateIntentCachePromotionEvidence(fixture);
     const second = evaluateIntentCachePromotionEvidence(fixture);
 
@@ -150,6 +32,7 @@ describe('intent cache promotion evaluation', () => {
           'OPERATION_COVERAGE_BELOW_THRESHOLD',
           'CRITICAL_CELL_MISSING',
           'ADVERSARIAL_CELL_CASES_BELOW_MINIMUM',
+          'ADVERSARIAL_PHENOMENA_MISSING',
         ].includes(reason),
       ),
     );
@@ -160,10 +43,8 @@ describe('intent cache promotion evaluation', () => {
   });
 
   it('derives unsafe normalized hits and does not credit their apparent savings', () => {
-    const result = evaluateIntentCachePromotionEvidence({
-      binding: binding(1, 0),
-      cases: [unsafePopulationCase()],
-    });
+    const fixture = createUnsafeHitIntentPromotionFixture();
+    const result = evaluateIntentCachePromotionEvidence(fixture);
 
     expect(result.qualified).toBe(false);
     expect(result.report.population.normalizedIntentWouldHits).toBe(1);
@@ -186,7 +67,7 @@ describe('intent cache promotion evaluation', () => {
       totals: {
         creditedCandidate: {
           physicalInputTokens: '100',
-          effectiveCostUnits: '100',
+          effectiveCostUnits: '1000',
         },
       },
     });
@@ -195,24 +76,101 @@ describe('intent cache promotion evaluation', () => {
     );
     expect(result.report.failureRefs).toContainEqual({
       reason: 'UNSAFE_NORMALIZED_INTENT_HITS',
-      caseDigests: [sha256('unsafe-case')],
+      caseDigests: [fixture.cases[0]!.caseDigest],
     });
   });
 
-  it('derives side-effect conformance instead of trusting the scenario label', () => {
-    const result = evaluateIntentCachePromotionEvidence({
-      binding: binding(0, 1),
-      cases: [invalidSideEffectCase()],
-    });
+  it('accepts only a coherent, separately bound side-effect probe', () => {
+    const coherent = evaluateIntentCachePromotionEvidence(
+      createSideEffectIntentPromotionFixture(),
+    );
 
-    expect(result.qualified).toBe(false);
-    expect(result.report.adversarial.truthTableViolations).toBe(1);
-    expect(result.report.gateReasons).toContain(
+    expect(coherent.report.adversarial.truthTableViolations).toBe(0);
+    expect(coherent.report.gateReasons).not.toContain(
       'SIDE_EFFECT_POLICY_BYPASS_VIOLATION',
     );
-    expect(result.report.failureRefs).toContainEqual({
-      reason: 'SIDE_EFFECT_POLICY_BYPASS_VIOLATION',
-      caseDigests: [sha256('side-effect-case')],
-    });
+    expect(() =>
+      evaluateIntentCachePromotionEvidence(
+        createSideEffectIntentPromotionFixture(false),
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'MALFORMED_ENVELOPE' }));
   });
+
+  it('rejects a distinct near miss that merely misses instead of proving a candidate bypass', () => {
+    const bypass = evaluateIntentCachePromotionEvidence(
+      createDistinctIntentPromotionFixture('candidate-bypass'),
+    );
+    const miss = evaluateIntentCachePromotionEvidence(
+      createDistinctIntentPromotionFixture('miss'),
+    );
+
+    expect(bypass.report.adversarial.truthTableViolations).toBe(0);
+    expect(miss.report.adversarial.truthTableViolations).toBe(1);
+    expect(miss.report.gateReasons).toContain(
+      'ADVERSARIAL_TRUTH_TABLE_VIOLATIONS',
+    );
+  });
+
+  it('reports missing required phenomenon tags and strictly parses every public input form', () => {
+    const result = evaluateIntentCachePromotionEvidence(
+      createDistinctIntentPromotionFixture('candidate-bypass'),
+    );
+
+    expect(result.report.adversarial.phenomenonCoverage.observed).toEqual([
+      'negation',
+    ]);
+    expect(result.report.adversarial.phenomenonCoverage.missing).toContain(
+      'unicode',
+    );
+    expect(result.report.gateReasons).toContain(
+      'ADVERSARIAL_PHENOMENA_MISSING',
+    );
+    const emptyJsonl = JSON.stringify(
+      createEmptyIntentPromotionFixture().binding,
+    );
+    expect(
+      evaluateIntentCachePromotionEvidence(emptyJsonl).report.bindingDigest,
+    ).toBe(
+      evaluateIntentCachePromotionEvidence(new TextEncoder().encode(emptyJsonl))
+        .report.bindingDigest,
+    );
+    expect(() =>
+      evaluateIntentCachePromotionEvidence({
+        binding: { bindingDigest: 'trusted-looking' },
+        cases: [],
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'MALFORMED_ENVELOPE' }));
+    expect(() =>
+      evaluateIntentCachePromotionEvidence('{"kind":"binding"}'),
+    ).toThrowError(expect.objectContaining({ code: 'MALFORMED_ENVELOPE' }));
+    expect(() =>
+      evaluateIntentCachePromotionEvidence(
+        new TextEncoder().encode('{"kind":"binding"}'),
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'MALFORMED_ENVELOPE' }));
+  });
+
+  it('qualifies a fully parsed evidence fixture through the package boundary', () => {
+    const result = evaluateIntentCachePromotionEvidence(
+      createQualifyingIntentPromotionFixture(),
+    );
+
+    expect(result.qualified).toBe(true);
+    if (!result.qualified) throw new TypeError('Expected qualification');
+    expect(result.report.gateReasons).toEqual([]);
+    expect(result.report.adversarial.phenomenonCoverage.missing).toEqual([]);
+    expect(result.report.operationCoverage).toMatchObject({
+      safeNormalizedIntentWouldHits: 4_000,
+      oraclePermittedEquivalentOpportunities: 4_000,
+      observedCoveragePpm: 1_000_000,
+    });
+    expect(result.report.statisticalClaims.unsafeAdmissionRate).toMatchObject({
+      failures: 0,
+      trials: 2_995,
+      upperBound95Ppm: 1_000,
+    });
+    expect(
+      parseIntentCacheShadowQualificationManifest(result.qualification),
+    ).toEqual(result.qualification);
+  }, 30_000);
 });
