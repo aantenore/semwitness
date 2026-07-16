@@ -44,7 +44,9 @@ import {
   type OntologyBinding,
 } from '../../src/intent/index.js';
 
-const SAFE_HIT_CASES = 4_000;
+// The 2,995 unsafe opportunities need a strict safe majority in each of the
+// eight value cells; round-robin allocation makes 3,003 the smallest count.
+const SAFE_HIT_CASES = 3_003;
 const UNSAFE_OPPORTUNITY_CASES = 2_995;
 const CASES_PER_ADVERSARIAL_CELL = 5;
 const SECRET = '0123456789abcdef0123456789abcdef';

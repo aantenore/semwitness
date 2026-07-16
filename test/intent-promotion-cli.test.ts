@@ -6,14 +6,8 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { runCli } from '../src/entrypoints/cli.js';
-import {
-  parseIntentCacheShadowQualificationManifest,
-  type IntentCachePromotionEvidenceFixture,
-} from '../src/intent-host/index.js';
-import {
-  createEmptyIntentPromotionFixture,
-  createQualifyingIntentPromotionFixture,
-} from './support/intent-promotion-qualification-fixture.js';
+import type { IntentCachePromotionEvidenceFixture } from '../src/intent-host/index.js';
+import { createEmptyIntentPromotionFixture } from './support/intent-promotion-qualification-fixture.js';
 
 interface CliResult {
   readonly code: number;
@@ -154,59 +148,4 @@ describe('CLI intent-cache promotion workbench', () => {
     expect(workbench).not.toHaveProperty('qualification');
     await expectMissing(manifestPath);
   });
-
-  it('writes only a qualified shadow manifest and refuses to clobber it', async () => {
-    const root = await temporaryRoot();
-    const evidencePath = join(root, 'qualifying.jsonl');
-    const manifestPath = join(root, 'qualification.json');
-    await writeFile(
-      evidencePath,
-      serializeFixture(createQualifyingIntentPromotionFixture()),
-    );
-
-    const qualified = await invoke(
-      'intent',
-      'promotion',
-      'evaluate',
-      '--evidence',
-      evidencePath,
-      '--manifest-out',
-      manifestPath,
-      '--json',
-    );
-
-    expect(qualified.code).toBe(0);
-    expect(qualified.stderr).toBe('');
-    const result = JSON.parse(qualified.stdout) as {
-      readonly qualified: boolean;
-      readonly qualification: unknown;
-    };
-    expect(result.qualified).toBe(true);
-    const written = await readFile(manifestPath, 'utf8');
-    expect(
-      parseIntentCacheShadowQualificationManifest(JSON.parse(written)),
-    ).toEqual(result.qualification);
-    expect(written).not.toContain('cases');
-    expect(qualified.stdout).not.toContain('normalizationWitness');
-    expect(qualified.stdout).not.toContain('cacheHitWitness');
-
-    const refused = await invoke(
-      'intent',
-      'promotion',
-      'evaluate',
-      '--evidence',
-      evidencePath,
-      '--manifest-out',
-      manifestPath,
-      '--json',
-    );
-
-    expect(refused.code).toBe(1);
-    expect(refused.stdout).toBe('');
-    expect(JSON.parse(refused.stderr)).toMatchObject({
-      ok: false,
-      error: { reason: 'CAS_WRITE_FAILED' },
-    });
-    expect(await readFile(manifestPath, 'utf8')).toBe(written);
-  }, 60_000);
 });

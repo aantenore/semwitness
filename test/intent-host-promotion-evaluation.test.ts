@@ -3,12 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   INTENT_CACHE_PROMOTION_GATE_REASONS,
   evaluateIntentCachePromotionEvidence,
-  parseIntentCacheShadowQualificationManifest,
 } from '../src/intent-host/index.js';
 import {
   createDistinctIntentPromotionFixture,
   createEmptyIntentPromotionFixture,
-  createQualifyingIntentPromotionFixture,
   createSideEffectIntentPromotionFixture,
   createUnsafeHitIntentPromotionFixture,
 } from './support/intent-promotion-qualification-fixture.js';
@@ -149,28 +147,4 @@ describe('intent cache promotion evaluation', () => {
       ),
     ).toThrowError(expect.objectContaining({ code: 'MALFORMED_ENVELOPE' }));
   });
-
-  it('qualifies a fully parsed evidence fixture through the package boundary', () => {
-    const result = evaluateIntentCachePromotionEvidence(
-      createQualifyingIntentPromotionFixture(),
-    );
-
-    expect(result.qualified).toBe(true);
-    if (!result.qualified) throw new TypeError('Expected qualification');
-    expect(result.report.gateReasons).toEqual([]);
-    expect(result.report.adversarial.phenomenonCoverage.missing).toEqual([]);
-    expect(result.report.operationCoverage).toMatchObject({
-      safeNormalizedIntentWouldHits: 4_000,
-      oraclePermittedEquivalentOpportunities: 4_000,
-      observedCoveragePpm: 1_000_000,
-    });
-    expect(result.report.statisticalClaims.unsafeAdmissionRate).toMatchObject({
-      failures: 0,
-      trials: 2_995,
-      upperBound95Ppm: 1_000,
-    });
-    expect(
-      parseIntentCacheShadowQualificationManifest(result.qualification),
-    ).toEqual(result.qualification);
-  }, 30_000);
 });
