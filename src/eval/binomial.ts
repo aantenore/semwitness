@@ -1,9 +1,10 @@
 /**
- * Exact one-sided 95% upper binomial bound for an independently sampled,
- * zero-failure experiment. Any observed failure is a hard fail for the alpha
- * contracts that use this helper, so the returned ceiling is one million ppm.
+ * Conservative ppm ceiling for the exact Clopper-Pearson one-sided 95% upper
+ * bound when an independently sampled Bernoulli experiment observes zero
+ * failures. An observed failure returns the alpha contract's hard-fail sentinel
+ * rather than a general non-zero-failure confidence interval.
  */
-export function zeroFailureUpperBound95Ppm(
+export function zeroFailureGateUpperBound95Ppm(
   failures: number,
   trials: number,
 ): number | null {
@@ -18,5 +19,5 @@ export function zeroFailureUpperBound95Ppm(
   }
   if (trials === 0) return null;
   if (failures > 0) return 1_000_000;
-  return Math.ceil((1 - Math.pow(0.05, 1 / trials)) * 1_000_000);
+  return Math.ceil(-Math.expm1(Math.log(0.05) / trials) * 1_000_000);
 }

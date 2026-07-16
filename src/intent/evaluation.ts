@@ -1,7 +1,7 @@
 import { toJsonValue } from '../domain/canonical-json.js';
 import { compareCodeUnits } from '../domain/deterministic-order.js';
 import { hashCanonical, sha256 } from '../domain/hash.js';
-import { zeroFailureUpperBound95Ppm } from '../eval/binomial.js';
+import { zeroFailureGateUpperBound95Ppm } from '../eval/binomial.js';
 import { digestIntent, digestIntentSource } from './canonical.js';
 import { normalizeIntentShadow } from './compiler.js';
 import { assertParsedIntentEvaluationFixture } from './normalizer-schemas.js';
@@ -262,7 +262,7 @@ export function falseMergeUpperBound95Ppm(
   falseMerges: number,
   distinctTrials: number,
 ): number | null {
-  return zeroFailureUpperBound95Ppm(falseMerges, distinctTrials);
+  return zeroFailureGateUpperBound95Ppm(falseMerges, distinctTrials);
 }
 
 async function observe(
