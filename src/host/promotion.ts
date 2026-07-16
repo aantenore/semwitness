@@ -16,6 +16,12 @@ export const HOST_PREPARER_ARTIFACT = Object.freeze({
   version: '1',
 } as const);
 
+export const HOST_ACTIVE_CODECS = Object.freeze([
+  Object.freeze({ id: 'json-jcs', version: '1' }),
+] as const);
+
+export const MIN_HOST_PROMOTION_SAVINGS_RATIO_PPM = 100_000;
+
 const MANIFEST_SCHEMA = 'semwitness.dev/host-promotion/v1alpha1' as const;
 const ROOT_FIELDS = [
   'schema',
@@ -40,7 +46,6 @@ const EVALUATION_FIELDS = [
 const TOKENIZER_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 const CODEC_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 const MAX_PROMOTED_CODECS = 128;
-const MIN_PROMOTED_SAVINGS_RATIO_PPM = 100_000;
 
 export function parseHostPromotionManifest(
   value: unknown,
@@ -135,7 +140,8 @@ function parseManifest(value: unknown): HostPromotionManifest {
     unsafeAccepts !== 0 ||
     taskQualityRegressions !== 0 ||
     !Number.isSafeInteger(medianNetSavingsRatioPpm) ||
-    (medianNetSavingsRatioPpm as number) < MIN_PROMOTED_SAVINGS_RATIO_PPM ||
+    (medianNetSavingsRatioPpm as number) <
+      MIN_HOST_PROMOTION_SAVINGS_RATIO_PPM ||
     (medianNetSavingsRatioPpm as number) > 1_000_000
   ) {
     throw malformed();
@@ -163,6 +169,15 @@ function parseManifest(value: unknown): HostPromotionManifest {
       medianNetSavingsRatioPpm: medianNetSavingsRatioPpm as number,
     }),
   });
+}
+
+export function isHostActiveCodec(value: {
+  readonly id: string;
+  readonly version: string;
+}): boolean {
+  return HOST_ACTIVE_CODECS.some(
+    (codec) => codec.id === value.id && codec.version === value.version,
+  );
 }
 
 function compareCodec(
