@@ -4,8 +4,8 @@ The SemWitness Codex plugin bundles the following software. Each package
 remains subject to its own license, reproduced below.
 
 ------------------------------------------------------------------------------
-@ai-sdk/gateway 4.0.13 (Apache-2.0)
-Package: https://www.npmjs.com/package/%40ai-sdk%2Fgateway/v/4.0.13
+@ai-sdk/gateway 4.0.16 (Apache-2.0)
+Package: https://www.npmjs.com/package/%40ai-sdk%2Fgateway/v/4.0.16
 ------------------------------------------------------------------------------
 
 License source: LICENSE
@@ -25,8 +25,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ------------------------------------------------------------------------------
-@ai-sdk/openai-compatible 3.0.5 (Apache-2.0)
-Package: https://www.npmjs.com/package/%40ai-sdk%2Fopenai-compatible/v/3.0.5
+@ai-sdk/openai-compatible 3.0.7 (Apache-2.0)
+Package: https://www.npmjs.com/package/%40ai-sdk%2Fopenai-compatible/v/3.0.7
 ------------------------------------------------------------------------------
 
 License source: LICENSE
@@ -46,8 +46,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ------------------------------------------------------------------------------
-@ai-sdk/provider 4.0.2 (Apache-2.0)
-Package: https://www.npmjs.com/package/%40ai-sdk%2Fprovider/v/4.0.2
+@ai-sdk/provider 4.0.3 (Apache-2.0)
+Package: https://www.npmjs.com/package/%40ai-sdk%2Fprovider/v/4.0.3
 ------------------------------------------------------------------------------
 
 License source: LICENSE
@@ -67,8 +67,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ------------------------------------------------------------------------------
-@ai-sdk/provider-utils 5.0.5 (Apache-2.0)
-Package: https://www.npmjs.com/package/%40ai-sdk%2Fprovider-utils/v/5.0.5
+@ai-sdk/provider-utils 5.0.7 (Apache-2.0)
+Package: https://www.npmjs.com/package/%40ai-sdk%2Fprovider-utils/v/5.0.7
 ------------------------------------------------------------------------------
 
 License source: SPDX Apache-2.0 standard text
@@ -515,8 +515,8 @@ Apache License 2.0
 See the LICENSE file in the root of this repository.
 
 ------------------------------------------------------------------------------
-ai 7.0.17 (Apache-2.0)
-Package: https://www.npmjs.com/package/ai/v/7.0.17
+ai 7.0.22 (Apache-2.0)
+Package: https://www.npmjs.com/package/ai/v/7.0.22
 ------------------------------------------------------------------------------
 
 License source: LICENSE
