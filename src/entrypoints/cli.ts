@@ -45,6 +45,10 @@ import {
   type IntentEvaluationFixture,
 } from '../intent/index.js';
 import {
+  evaluateHostPromotionEvidence,
+  parseHostPromotionEvidenceJsonl,
+} from '../host/promotion-evidence.js';
+import {
   createSimulationBundle,
   parseSimulationBundle,
   serializeSegmentMetadata,
@@ -62,10 +66,11 @@ import {
   writeNewPrivateFile,
 } from './io.js';
 
-const VERSION = '0.5.0-alpha.1';
+const VERSION = '0.5.0-alpha.2';
 const ERROR_SCHEMA = 'semwitness.dev/cli-error/v1alpha1';
 const MAX_INTENT_NORMALIZER_BYTES = 4 * 1024 * 1024;
 const MAX_INTENT_COMPILER_BINDING_BYTES = 64 * 1024;
+const MAX_PROMOTION_EVIDENCE_BYTES = 32 * 1024 * 1024;
 const DEFAULT_MAX_INTENT_REQUESTS = 100;
 const MAX_INTENT_REQUESTS = 1_000;
 const INTENT_COMPILER_BINDING_SCHEMA =
@@ -340,6 +345,63 @@ export async function runCli(
         });
         writeJson(report);
         if (!report.gate.passed) {
+          verdictExitCode = Math.max(verdictExitCode, 2);
+        }
+      },
+    );
+
+  const promotion = program
+    .command('promotion')
+    .description(
+      'Compile deployment-owned held-out evidence into a gated host promotion.',
+    );
+
+  promotion
+    .command('evaluate')
+    .description(
+      'Evaluate strict content-free JSONL and emit a promotion only when every hard gate passes.',
+    )
+    .requiredOption('--evidence <file>', 'Strict promotion evidence JSONL file')
+    .requiredOption('--policy <file>', 'Exact apply-verified YAML policy')
+    .option(
+      '--manifest-out <file>',
+      'Optional new private manifest path; existing files are refused',
+    )
+    .option('--json', 'Emit stable JSON (default)')
+    .action(
+      async (options: {
+        evidence: string;
+        policy: string;
+        manifestOut?: string;
+      }) => {
+        const policy = await loadPolicyFile(options.policy);
+        const source = decodeUtf8(
+          await readBoundedRegularFile(
+            options.evidence,
+            MAX_PROMOTION_EVIDENCE_BYTES,
+          ),
+          'Promotion evidence must be UTF-8',
+        );
+        const result = evaluateHostPromotionEvidence({
+          policy,
+          fixture: parseHostPromotionEvidenceJsonl(source),
+        });
+        if (result.qualified && options.manifestOut !== undefined) {
+          if (result.promotion === undefined) {
+            throw new SemWitnessError(
+              'MALFORMED_ENVELOPE',
+              'Qualified evidence omitted its promotion manifest',
+            );
+          }
+          await writeNewPrivateFile(
+            options.manifestOut,
+            new TextEncoder().encode(
+              `${canonicalJson(toJsonValue(result.promotion))}\n`,
+            ),
+          );
+        }
+        writeJson(result);
+        if (!result.qualified) {
           verdictExitCode = Math.max(verdictExitCode, 2);
         }
       },

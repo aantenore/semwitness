@@ -1,6 +1,6 @@
 ---
 name: semwitness
-description: Use this skill when a user wants to analyze LLM context size, simulate verified semantic compression, inspect or verify a SemWitness proof bundle, retrieve a locally stored original by digest, replay compression fixtures, evaluate exact or OpenAI-compatible intent compilers, or measure token savings without transparent prompt interception.
+description: Use this skill when a user wants to analyze LLM context size, simulate verified semantic compression, inspect or verify a SemWitness proof bundle, retrieve a locally stored original by digest, replay compression fixtures, compile held-out promotion evidence, evaluate exact or OpenAI-compatible intent compilers, or measure token savings without transparent prompt interception.
 ---
 
 # SemWitness
@@ -11,7 +11,9 @@ Use SemWitness as an explicit, proof-carrying semantic codec and bounded
 intent-evaluation tool for AI-agent context. It can analyze input, simulate and
 verify compression, retrieve a content-addressed original, report local-store
 statistics, replay fixtures, and test exact, consensus, or explicitly networked
-intent compilers against strict ground truth.
+intent compilers against strict ground truth. It can also compile
+deployment-owned, payload-free held-out usage and task-quality observations into
+a host promotion manifest when every activation gate passes.
 
 SemWitness is a shadow-mode tool. It does not intercept, replace, or silently rewrite Codex prompts, tool calls, or responses.
 
@@ -62,7 +64,14 @@ If the launcher reports that `dist/cli.mjs` is missing, stop and explain that th
     matching `SEMWITNESS_*`. Never place an API key in JSON, a CLI flag, chat
     output, or a report. Compiler or consensus agreement is candidate evidence,
     not semantic proof or cache authorization.
-13. The plugin cannot transparently replace prompt ingress. Actual token savings
+13. Never invent, estimate, or relabel promotion evidence. Use `promotion
+evaluate` only with a deployment-owned apply-verified policy and exact
+    provider/runtime observations from at least 50 paired held-out cases, all
+    four difficulty strata, cold and warm execution, at least five cases per
+    stratum/cache cell, and at least ten complete cases per codec. A
+    valid gate failure (exit `2`) is evidence to retain, not a reason to edit
+    counters, drop failed cases, or weaken thresholds.
+14. The plugin cannot transparently replace prompt ingress. Actual token savings
     require a visible Codex SDK/App Server integration or gateway that applies a
     separately admitted candidate before the provider call.
 
@@ -129,6 +138,28 @@ node <plugin-root>/scripts/semwitness.mjs replay \
   --json
 ```
 
+Compile deployment-owned evidence into a new promotion manifest:
+
+```bash
+node <plugin-root>/scripts/semwitness.mjs promotion evaluate \
+  --evidence <strict-payload-free-held-out-jsonl> \
+  --policy <apply-verified-policy> \
+  --manifest-out <new-manifest-file> \
+  --json
+```
+
+The workbench is offline and provider-neutral. It requires unique case, trace,
+and quality digests; paired randomized or counterbalanced evidence; the fixed
+4x2 difficulty/cache profile; exact observed usage; zero unsafe accepts and
+task regressions; and median plus aggregate gates globally, per codec, per
+stratum, per cache regime, and per cell. Runtime-owned coverage, savings,
+latency, and per-case regression limits cannot be weakened by the evidence.
+Exit `0` means a manifest was qualified, exit `2` means valid evidence failed
+one or more gates and no manifest was created, and exit `1` means malformed/I/O
+failure. Treat the result as `host-attested-unsigned`: it validates
+deterministic bindings and math, but cannot prove that the corpus was held out
+or that the host, provider, or task oracle was honest.
+
 Evaluate a declarative intent normalizer without serving cache values:
 
 ```bash
@@ -174,7 +205,18 @@ After analysis or simulation, report:
 - verification status and whether fallback to the original occurred;
 - the proof-bundle or store path, without exposing stored content unnecessarily.
 
-V0.1 never substitutes the candidate into the active Codex context. Report verified projected savings as shadow evidence only, state the decision reason, and continue with the original context. A future opt-in host adapter must define a separate task-quality and provider-usage admission gate.
+V0.1 never substitutes the candidate into the active Codex context. Report
+verified projected savings as shadow evidence only, state the decision reason,
+and continue with the original context. The opt-in host adapter now has a
+separate Promotion Evidence Workbench; never confuse a mechanically verified
+candidate or a hand-authored manifest with a qualified held-out promotion.
+
+For promotion evaluation, report the stable gate reasons, median and aggregate
+input/cost/net savings globally and for codec/stratum/cache/cell slices,
+aggregate and per-case latency/regression failures, corpus completeness,
+coverage, duplicate-evidence counts, unsafe accepts, task regressions, and
+whether a manifest was emitted. Do not expose paths, prompts, responses, case
+IDs, raw provider payloads, or provider error text.
 
 For intent evaluation, report exact-intent accuracy, bypass accuracy, unsafe
 accepts, repeatability failures, equivalent-pair convergence, and distinct-pair
