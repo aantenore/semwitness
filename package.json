@@ -1,6 +1,6 @@
 {
   "name": "semwitness",
-  "version": "0.5.0-alpha.1",
+  "version": "0.5.0-alpha.2",
   "description": "Proof-carrying context optimization with promotion-gated JSON preparation and shadow intent-cache admission.",
   "type": "module",
   "license": "Apache-2.0",

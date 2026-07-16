@@ -1,11 +1,19 @@
 import { Buffer } from 'node:buffer';
-import { lstat, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  lstat,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { canonicalJson, toJsonValue } from '../src/domain/canonical-json.js';
 import { hashCanonical, sha256 } from '../src/domain/hash.js';
+import { digestPolicy } from '../src/domain/policy.js';
 import {
   parseSimulationBundle,
   type SimulationBundle,
@@ -16,6 +24,11 @@ import {
   INTENT_OPERATION_REGISTRY_SCHEMA,
   INTENT_SCHEMA,
 } from '../src/intent/index.js';
+import {
+  HOST_PREPARER_ARTIFACT,
+  digestHostPromotionCorpus,
+} from '../src/host/index.js';
+import { makePolicy } from './helpers.js';
 
 type DeepMutable<T> = T extends readonly (infer Item)[]
   ? DeepMutable<Item>[]
@@ -117,6 +130,103 @@ ${records}
 function resealBundle(bundle: DeepMutable<SimulationBundle>): void {
   const { bundleDigest: _bundleDigest, ...unsigned } = bundle;
   bundle.bundleDigest = hashCanonical(toJsonValue(unsigned));
+}
+
+function promotionCliEvidence(unsafeAccepted = false): {
+  readonly policy: ReturnType<typeof makePolicy>;
+  readonly source: string;
+} {
+  const policy = makePolicy({
+    mode: 'apply-verified',
+    tokenizerId: 'cli-promotion-exact',
+  });
+  const deploymentScopeDigest = sha256('cli-promotion-scope-v1');
+  const privateSourceSentinel = 'PRIVATE_PROMPT_SENTINEL_cli_promotion';
+  const caseDigests = Array.from({ length: 50 }, (_, ordinal) =>
+    sha256(`${privateSourceSentinel}-${ordinal}`),
+  );
+  const binding = {
+    schema: 'semwitness.dev/host-promotion-evidence/v1alpha1',
+    kind: 'binding',
+    artifact: HOST_PREPARER_ARTIFACT,
+    policyDigest: digestPolicy(policy),
+    deploymentScopeDigest,
+    corpusDigest: digestHostPromotionCorpus(caseDigests),
+    evaluationProtocolDigest: sha256('cli-promotion-protocol-v1'),
+    split: 'held-out',
+    usageEvidence: {
+      source: 'runtime-accounting',
+      reliability: 'exact',
+    },
+    expectedCases: 50,
+    tokenizer: {
+      id: policy.tokenizerId,
+      fingerprint: sha256('cli-exact-tokenizer-v1'),
+      reliability: 'exact',
+    },
+    codecs: [{ id: 'json-jcs', version: '1' }],
+    design: {
+      pairing: 'paired',
+      order: 'randomized',
+      requiredStrata: ['simple', 'medium', 'complex', 'adversarial'],
+      requiredCacheRegimes: ['cold', 'warm'],
+      minimumCasesPerStratumCacheCell: 5,
+    },
+    gate: {
+      minimumMedianNetSavingsRatioPpm: 100_000,
+      maximumMedianLatencyRegressionRatioPpm: 250_000,
+      maximumCaseNetRegressionRatioPpm: 500_000,
+      maximumCaseLatencyRegressionRatioPpm: 500_000,
+    },
+  };
+  const strata = ['simple', 'medium', 'complex', 'adversarial'] as const;
+  const cases = Array.from({ length: 50 }, (_, ordinal) => ({
+    schema: 'semwitness.dev/host-promotion-evidence/v1alpha1',
+    kind: 'case',
+    ordinal,
+    caseDigest: caseDigests[ordinal],
+    status: 'complete',
+    stratum: strata[Math.floor(ordinal / 2) % strata.length],
+    cacheRegime: ordinal % 2 === 0 ? 'cold' : 'warm',
+    codec: { id: 'json-jcs', version: '1' },
+    deploymentScopeDigest,
+    decision: 'applied',
+    baseline: {
+      traceDigest: sha256(`cli-baseline-${ordinal}`),
+      totalInputTokens: 1_000,
+      cacheReadInputTokens: 400,
+      cacheWriteInputTokens: 100,
+      totalOutputTokens: 100,
+      reasoningOutputTokens: 20,
+      normalizedCostUnits: 1_000_000,
+      endToEndLatencyMicros: 1_000_000,
+      compressorLatencyMicros: 0,
+      attempts: 1,
+      retryCount: 0,
+      recoveryCount: 0,
+    },
+    candidate: {
+      traceDigest: sha256(`cli-candidate-${ordinal}`),
+      totalInputTokens: 700,
+      cacheReadInputTokens: 300,
+      cacheWriteInputTokens: 50,
+      totalOutputTokens: 100,
+      reasoningOutputTokens: 20,
+      normalizedCostUnits: 800_000,
+      endToEndLatencyMicros: 1_100_000,
+      compressorLatencyMicros: 50_000,
+      attempts: 1,
+      retryCount: 0,
+      recoveryCount: 0,
+    },
+    unsafeAccepted: unsafeAccepted && ordinal === 0,
+    taskQualityRegression: false,
+    qualityEvidenceDigest: sha256(`cli-quality-${ordinal}`),
+  }));
+  return {
+    policy,
+    source: `${[binding, ...cases].map((item) => JSON.stringify(item)).join('\n')}\n`,
+  };
 }
 
 afterEach(async () => {
@@ -490,4 +600,144 @@ describe('CLI intent normalizer evaluation', () => {
       error: { reason: 'INTENT_MALFORMED' },
     });
   });
+});
+
+describe('CLI promotion evidence workbench', () => {
+  it('writes a new private manifest only after the held-out gate passes', async () => {
+    const root = await temporaryRoot();
+    const evidencePath = join(root, 'promotion-evidence.jsonl');
+    const policyPath = join(root, 'apply-policy.json');
+    const manifestPath = join(root, 'promotion.json');
+    const candidate = promotionCliEvidence();
+    await writeFile(evidencePath, candidate.source);
+    await writeFile(policyPath, JSON.stringify(candidate.policy));
+
+    const result = await invoke(
+      'promotion',
+      'evaluate',
+      '--evidence',
+      evidencePath,
+      '--policy',
+      policyPath,
+      '--manifest-out',
+      manifestPath,
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).not.toContain(
+      'PRIVATE_PROMPT_SENTINEL_cli_promotion',
+    );
+    const report = JSON.parse(result.stdout) as {
+      readonly qualified: boolean;
+      readonly reportDigest: string;
+      readonly promotion: unknown;
+      readonly promotionDigest: string;
+    };
+    expect(report).toMatchObject({
+      qualified: true,
+      reportDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
+      promotionDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
+    });
+    expect(JSON.parse(await readFile(manifestPath, 'utf8'))).toEqual(
+      report.promotion,
+    );
+    if (process.platform !== 'win32') {
+      expect((await lstat(manifestPath)).mode & 0o777).toBe(0o600);
+    }
+  });
+
+  it('uses exit two and creates no manifest when valid evidence fails a gate', async () => {
+    const root = await temporaryRoot();
+    const evidencePath = join(root, 'unsafe-evidence.jsonl');
+    const policyPath = join(root, 'apply-policy.json');
+    const manifestPath = join(root, 'must-not-exist.json');
+    const candidate = promotionCliEvidence(true);
+    await writeFile(evidencePath, candidate.source);
+    await writeFile(policyPath, JSON.stringify(candidate.policy));
+
+    const result = await invoke(
+      'promotion',
+      'evaluate',
+      '--evidence',
+      evidencePath,
+      '--policy',
+      policyPath,
+      '--manifest-out',
+      manifestPath,
+    );
+
+    expect(result.code).toBe(2);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      qualified: false,
+      report: {
+        caseMetrics: { unsafeAccepts: 1 },
+        gate: { passed: false, reasons: ['UNSAFE_ACCEPTS'] },
+      },
+    });
+    expect(JSON.parse(result.stdout)).not.toHaveProperty('promotion');
+    await expect(lstat(manifestPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('fails with a generic content-free error for malformed evidence', async () => {
+    const root = await temporaryRoot();
+    const evidencePath = join(root, 'malformed-evidence.jsonl');
+    const policyPath = join(root, 'apply-policy.json');
+    const manifestPath = join(root, 'must-not-exist.json');
+    const candidate = promotionCliEvidence();
+    const records = candidate.source.trimEnd().split('\n');
+    const malformedCase = JSON.parse(records[1]!) as Record<string, unknown>;
+    malformedCase.prompt = 'PRIVATE_MALFORMED_EVIDENCE_SENTINEL';
+    records[1] = JSON.stringify(malformedCase);
+    await writeFile(evidencePath, `${records.join('\n')}\n`);
+    await writeFile(policyPath, JSON.stringify(candidate.policy));
+
+    const result = await invoke(
+      'promotion',
+      'evaluate',
+      '--evidence',
+      evidencePath,
+      '--policy',
+      policyPath,
+      '--manifest-out',
+      manifestPath,
+    );
+
+    expect(result).toEqual({
+      code: 1,
+      stdout: '',
+      stderr:
+        '{"error":{"message":"Command input or serialized data is invalid","reason":"MALFORMED_ENVELOPE"},"ok":false,"schema":"semwitness.dev/cli-error/v1alpha1"}\n',
+    });
+    expect(result.stderr).not.toContain('PRIVATE_MALFORMED_EVIDENCE_SENTINEL');
+    await expect(lstat(manifestPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it.runIf(process.platform !== 'win32')(
+    'refuses promotion evidence read through a symbolic link',
+    async () => {
+      const root = await temporaryRoot();
+      const evidencePath = join(root, 'promotion-evidence.jsonl');
+      const linkedEvidencePath = join(root, 'linked-evidence.jsonl');
+      const policyPath = join(root, 'apply-policy.json');
+      const candidate = promotionCliEvidence();
+      await writeFile(evidencePath, candidate.source);
+      await symlink(evidencePath, linkedEvidencePath);
+      await writeFile(policyPath, JSON.stringify(candidate.policy));
+
+      const result = await invoke(
+        'promotion',
+        'evaluate',
+        '--evidence',
+        linkedEvidencePath,
+        '--policy',
+        policyPath,
+      );
+
+      expect(result.code).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).not.toContain('PRIVATE_PROMPT_SENTINEL');
+    },
+  );
 });
