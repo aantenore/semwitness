@@ -11,6 +11,7 @@ import {
   parseNormalizationWitnessDocument,
   parseUnsignedNormalizationWitnessDocument,
 } from './schemas.js';
+import { isInternalNormalizationWitness } from './parsed-witness-internal.js';
 import {
   NORMALIZATION_WITNESS_SCHEMA,
   type CandidateEvidence,
@@ -98,8 +99,7 @@ export function recomputeNormalizationWitnessDigest(
   witness: NormalizationWitness,
 ): Sha256Digest {
   const parsed = parseNormalizationWitnessDocument(witness);
-  const { witnessDigest: _witnessDigest, ...unsigned } = parsed;
-  return hashCanonical(toJsonValue(unsigned));
+  return digestParsedNormalizationWitness(parsed);
 }
 
 export function verifyNormalizationWitness(
@@ -125,15 +125,16 @@ function verifyNormalization(
 ): NormalizationVerification {
   let witness: NormalizationWitness;
   try {
-    witness = parseNormalizationWitnessDocument(input);
+    witness = isInternalNormalizationWitness(input)
+      ? input
+      : parseNormalizationWitnessDocument(input);
   } catch {
     return { verified: false, reasons: ['INTENT_MALFORMED'] };
   }
 
+  const integrity = inspectParsedNormalizationWitnessIntegrity(witness);
   const reasons: IntentReasonCode[] = [];
-  if (recomputeNormalizationWitnessDigest(witness) !== witness.witnessDigest) {
-    reasons.push('INTENT_WITNESS_TAMPERED');
-  }
+  if (!integrity.digestMatches) reasons.push('INTENT_WITNESS_TAMPERED');
   let current: NormalizationVerificationContext | undefined;
   if (expectations !== undefined) {
     try {
@@ -174,13 +175,30 @@ function verifyNormalization(
   ) {
     reasons.push('INTENT_POLICY_MISMATCH');
   }
-  if (
-    !sameDecision(normalizationDecision(witness.assessment), witness.decision)
-  ) {
-    reasons.push('INTENT_WITNESS_TAMPERED');
-  }
-
+  if (!integrity.decisionMatches) reasons.push('INTENT_WITNESS_TAMPERED');
   return { verified: reasons.length === 0, reasons: [...new Set(reasons)] };
+}
+
+/** Inspect an already strict-schema-parsed witness without parsing it again. */
+function inspectParsedNormalizationWitnessIntegrity(
+  witness: NormalizationWitness,
+): { readonly digestMatches: boolean; readonly decisionMatches: boolean } {
+  return {
+    digestMatches:
+      digestParsedNormalizationWitness(witness) === witness.witnessDigest,
+    decisionMatches: sameDecision(
+      normalizationDecision(witness.assessment),
+      witness.decision,
+    ),
+  };
+}
+
+/** Internal digest path for an already strict-schema-parsed witness. */
+function digestParsedNormalizationWitness(
+  witness: NormalizationWitness,
+): Sha256Digest {
+  const { witnessDigest: _witnessDigest, ...unsigned } = witness;
+  return hashCanonical(toJsonValue(unsigned));
 }
 
 export function normalizationDecision(input: {

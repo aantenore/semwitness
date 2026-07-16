@@ -848,6 +848,9 @@ describe('intent-cache promotion evidence valid boundary', () => {
     expect(Object.isFrozen(parsed.binding.dependencies)).toBe(true);
     expect(Object.isFrozen(parsed.cases)).toBe(true);
     expect(Object.isFrozen(parsed.cases[0]?.usage.ordinary)).toBe(true);
+    expect(Object.getPrototypeOf(parsed)).toBeNull();
+    expect(Object.getPrototypeOf(parsed.binding)).toBeNull();
+    expect(Object.getPrototypeOf(parsed.cases[0])).toBeNull();
     expect(JSON.stringify(parsed)).not.toMatch(
       /raw|utterance|promptText|responseText|sourceRelation|denominator/u,
     );

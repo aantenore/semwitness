@@ -17,8 +17,6 @@ import {
   snapshotDenseDataArray,
 } from '../host/data-only.js';
 import {
-  parseCacheHitWitness,
-  parseNormalizationWitness,
   verifyCacheHitWitnessIntegrity,
   verifyNormalizationWitnessIntegrity,
   type CacheBinding,
@@ -28,6 +26,10 @@ import {
   type NormalizerBinding,
   type OntologyBinding,
 } from '../intent/index.js';
+import {
+  parseInternalCacheHitWitness,
+  parseInternalNormalizationWitness,
+} from '../intent/parsed-witness-internal.js';
 import {
   parseIntentCacheLookupReceipt,
   parseIntentCacheOperationBinding,
@@ -502,7 +504,14 @@ function parseRecords(
   const binding = parseBinding(bindingValue);
   const cases = caseValues.map(parseCase);
   validateFixture(binding, cases);
-  return freezeData({ binding, cases });
+  const frozenCases = Object.freeze(cases);
+  const fixture = Object.assign(Object.create(null), {
+    binding,
+    cases: frozenCases,
+  }) as IntentCachePromotionEvidenceFixture;
+  Object.freeze(fixture);
+  assertDeepFrozenData(fixture);
+  return fixture;
 }
 
 function parseBinding(value: unknown): IntentCachePromotionEvidenceBinding {
@@ -1383,7 +1392,7 @@ function parseVerifiedNormalizationWitness(
   value: unknown,
 ): NormalizationWitness {
   const data = snapshotJsonData(value);
-  const witness = parseNormalizationWitness(data);
+  const witness = parseInternalNormalizationWitness(data);
   if (
     !verifyNormalizationWitnessIntegrity(witness).verified ||
     typeof witness.sourceDigest !== 'string' ||
@@ -1391,7 +1400,7 @@ function parseVerifiedNormalizationWitness(
   ) {
     throw malformedEvidence('Normalization witness is invalid');
   }
-  return freezeData(witness);
+  return witness;
 }
 
 function parseVerifiedCacheHitWitness(
@@ -1399,11 +1408,11 @@ function parseVerifiedCacheHitWitness(
   normalizationWitness: NormalizationWitness,
 ): CacheHitWitness {
   const data = snapshotJsonData(value);
-  const witness = parseCacheHitWitness(data);
+  const witness = parseInternalCacheHitWitness(data);
   if (!verifyCacheHitWitnessIntegrity(witness, normalizationWitness).verified) {
     throw malformedEvidence('Cache-hit witness is invalid');
   }
-  return freezeData(witness);
+  return witness;
 }
 
 function validateFixture(
@@ -2108,6 +2117,33 @@ function assertJsonlRecordLimit(value: string): void {
 
 function freezeData<T>(value: T): T {
   return immutableJson(toJsonValue(value)) as T;
+}
+
+function assertDeepFrozenData(value: unknown): void {
+  const seen = new WeakSet<object>();
+  const visit = (candidate: unknown): void => {
+    if (candidate === null || typeof candidate !== 'object') return;
+    if (seen.has(candidate)) {
+      throw malformedEvidence(
+        'Internal parsed snapshot contains aliased state',
+      );
+    }
+    seen.add(candidate);
+    if (!Object.isFrozen(candidate)) {
+      throw malformedEvidence('Internal parsed snapshot is not deeply frozen');
+    }
+    for (const key of Reflect.ownKeys(candidate)) {
+      if (typeof key !== 'string') {
+        throw malformedEvidence('Internal parsed snapshot is not JSON data');
+      }
+      const descriptor = Reflect.getOwnPropertyDescriptor(candidate, key);
+      if (descriptor === undefined || !Object.hasOwn(descriptor, 'value')) {
+        throw malformedEvidence('Internal parsed snapshot is not data-only');
+      }
+      visit(descriptor.value);
+    }
+  };
+  visit(value);
 }
 
 function malformedEvidence(message: string): SemWitnessError {
