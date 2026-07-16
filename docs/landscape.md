@@ -26,7 +26,7 @@ The features above overlap substantially. “Content-aware”, “reversible”,
 4. verify hashes, anchors, schemas, and configured byte/token budgets without calling an LLM;
 5. replay recorded corpora deterministically as mechanical input to an external policy-admission decision;
 6. default to shadow mode and preserve the original on uncertainty or net loss;
-7. integrate with Codex first while keeping the host boundary adaptable to Claude and others.
+7. integrate first through an established model-SDK middleware boundary while keeping Codex and other clients explicit and independently adaptable.
 
 This positions SemWitness as **compression CI and governance**, while RTK and Squeez optimize CLI surfaces, Headroom supplies a compression platform, LLMLingua supplies neural codecs, and Token Optimizer supplies broader context operations.
 
