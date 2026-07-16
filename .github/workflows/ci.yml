@@ -59,6 +59,21 @@ jobs:
             "$package_path"
           "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" --version
           "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" --help
+          test -f "$RUNNER_TEMP/semwitness-install/node_modules/semwitness/dist/intent-host/index.js"
+          test -f "$RUNNER_TEMP/semwitness-install/node_modules/semwitness/dist/intent-host/index.d.ts"
+          cd "$RUNNER_TEMP/semwitness-install"
+          node --input-type=module -e '
+            const api = await import("semwitness/intent/host");
+            for (const name of [
+              "parseIntentCacheShadowQualificationManifest",
+              "digestIntentCacheShadowQualificationManifest",
+              "parseIntentCacheOperationBinding",
+              "parseIntentCacheLookupReceipt",
+              "parseIntentNormalizationBypassReceipt"
+            ]) {
+              if (typeof api[name] !== "function") throw new Error(`missing ${name}`);
+            }
+          '
 
   audit:
     name: Dependency audit
