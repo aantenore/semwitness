@@ -324,6 +324,33 @@ describe('intent-cache shadow qualification manifest', () => {
     expectMalformed(candidate);
   });
 
+  it('rejects permitted opportunities that hide unreported false misses', () => {
+    const candidate = mutableFixture();
+    candidate.scope.operation.oraclePermittedEquivalentOpportunities = 4_000;
+    candidate.scope.operation.normalizedIntentCoveragePpm = 748_750;
+    candidate.statisticalClaims.falseMissRate.oraclePermittedEquivalentOpportunities = 4_000;
+    candidate.population.attempted = 6_995;
+    candidate.population.emitted = 6_995;
+    candidate.population.complete = 6_995;
+    candidate.population.uniqueClusters = 6_995;
+    candidate.population.bypasses = 4_000;
+
+    expectMalformed(candidate);
+  });
+
+  it('rejects unsafe-opportunity trials padded by exact-source hits', () => {
+    const candidate = mutableFixture();
+    candidate.statisticalClaims.unsafeAdmissionRate.trials = 4_000;
+    candidate.statisticalClaims.unsafeAdmissionRate.upperBound95Ppm = 749;
+    candidate.population.attempted = 6_995;
+    candidate.population.emitted = 6_995;
+    candidate.population.complete = 6_995;
+    candidate.population.uniqueClusters = 6_995;
+    candidate.population.exactSourceWouldHits = 1_005;
+
+    expectMalformed(candidate);
+  });
+
   it('rejects observation, response and non-alpha qualification modes', () => {
     for (const [field, value] of [
       ['tier', 'observation'],
