@@ -1,5 +1,5 @@
 import { constants } from 'node:fs';
-import { chmod, lstat, open, opendir, realpath } from 'node:fs/promises';
+import { lstat, open, opendir, realpath } from 'node:fs/promises';
 import { dirname, relative, resolve } from 'node:path';
 import { parseDocument } from 'yaml';
 import { SemWitnessError } from '../domain/errors.js';
@@ -12,6 +12,7 @@ import {
   validatePolicy,
   type CodecPolicy,
 } from '../domain/policy.js';
+import { writePrivateFileNoClobber } from './private-file-write.js';
 
 export const DEFAULT_STORE_DIRECTORY = '.semwitness';
 export const MAX_POLICY_BYTES = 1024 * 1024;
@@ -160,29 +161,15 @@ export async function writeNewPrivateFile(
       'Output parent must be a real directory',
     );
   }
-  const safeTarget = target;
-  const noFollow = process.platform === 'win32' ? 0 : constants.O_NOFOLLOW;
-  let handle;
   try {
-    handle = await open(
-      safeTarget,
-      constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | noFollow,
-      0o600,
-    );
-    await handle.writeFile(bytes);
-    await handle.sync();
-    await handle.close();
-    handle = undefined;
-    await chmod(safeTarget, 0o600);
-    return safeTarget;
+    await writePrivateFileNoClobber(target, bytes);
+    return target;
   } catch (error) {
     throw new SemWitnessError(
       'CAS_WRITE_FAILED',
       'Refusing to overwrite or follow an unsafe output path',
       error,
     );
-  } finally {
-    await handle?.close().catch(() => undefined);
   }
 }
 

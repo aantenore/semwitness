@@ -3,6 +3,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   realpath,
   rm,
   symlink,
@@ -47,6 +48,7 @@ describe('private output files', () => {
     if (process.platform !== 'win32') {
       expect(stat.mode & 0o777).toBe(0o600);
     }
+    expect(await readdir(root)).toEqual(['retrieved.bin']);
 
     await expect(
       writeNewPrivateFile(
@@ -55,6 +57,35 @@ describe('private output files', () => {
       ),
     ).rejects.toMatchObject({ code: 'CAS_WRITE_FAILED' });
     expect(new Uint8Array(await readFile(destination))).toEqual(original);
+    expect(await readdir(root)).toEqual(['retrieved.bin']);
+  });
+
+  it('publishes exactly one complete winner under concurrent no-clobber writes', async () => {
+    const root = await temporaryRoot();
+    const destination = join(root, 'concurrent.bin');
+    const candidates = [
+      new TextEncoder().encode('COMPLETE_CANDIDATE_A'),
+      new TextEncoder().encode('COMPLETE_CANDIDATE_B'),
+    ] as const;
+
+    const results = await Promise.allSettled(
+      candidates.map((candidate) =>
+        writeNewPrivateFile(destination, candidate),
+      ),
+    );
+
+    expect(
+      results.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
+    expect(
+      results.filter((result) => result.status === 'rejected'),
+    ).toHaveLength(1);
+    const winner = results.findIndex((result) => result.status === 'fulfilled');
+    expect(winner).toBeGreaterThanOrEqual(0);
+    expect(new Uint8Array(await readFile(destination))).toEqual(
+      candidates[winner],
+    );
+    expect(await readdir(root)).toEqual(['concurrent.bin']);
   });
 
   it('refuses a symbolic-link destination without modifying its target', async () => {
