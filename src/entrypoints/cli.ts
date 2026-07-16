@@ -44,6 +44,7 @@ import {
   type IntentEvaluationCase,
   type IntentEvaluationFixture,
 } from '../intent/index.js';
+import { evaluateIntentCachePromotionEvidence } from '../intent-host/index.js';
 import {
   evaluateHostPromotionEvidence,
   parseHostPromotionEvidenceJsonl,
@@ -71,6 +72,7 @@ const ERROR_SCHEMA = 'semwitness.dev/cli-error/v1alpha1';
 const MAX_INTENT_NORMALIZER_BYTES = 4 * 1024 * 1024;
 const MAX_INTENT_COMPILER_BINDING_BYTES = 64 * 1024;
 const MAX_PROMOTION_EVIDENCE_BYTES = 32 * 1024 * 1024;
+const MAX_INTENT_PROMOTION_EVIDENCE_BYTES = 128 * 1024 * 1024;
 const DEFAULT_MAX_INTENT_REQUESTS = 100;
 const MAX_INTENT_REQUESTS = 1_000;
 const INTENT_COMPILER_BINDING_SCHEMA =
@@ -349,6 +351,47 @@ export async function runCli(
         }
       },
     );
+
+  const intentPromotion = intent
+    .command('promotion')
+    .description(
+      'Evaluate payload-free intent-cache evidence for a shadow qualification.',
+    );
+
+  intentPromotion
+    .command('evaluate')
+    .description(
+      'Evaluate strict intent-cache JSONL and emit a qualification only when every hard gate passes.',
+    )
+    .requiredOption(
+      '--evidence <file>',
+      'Strict intent-cache promotion evidence JSONL file',
+    )
+    .option(
+      '--manifest-out <file>',
+      'Optional new private qualification path; existing files are refused',
+    )
+    .option('--json', 'Emit stable JSON (default)')
+    .action(async (options: { evidence: string; manifestOut?: string }) => {
+      const result = evaluateIntentCachePromotionEvidence(
+        await readBoundedRegularFile(
+          options.evidence,
+          MAX_INTENT_PROMOTION_EVIDENCE_BYTES,
+        ),
+      );
+      if (result.qualified && options.manifestOut !== undefined) {
+        await writeNewPrivateFile(
+          options.manifestOut,
+          new TextEncoder().encode(
+            `${canonicalJson(toJsonValue(result.qualification))}\n`,
+          ),
+        );
+      }
+      writeJson(result);
+      if (!result.qualified) {
+        verdictExitCode = Math.max(verdictExitCode, 2);
+      }
+    });
 
   const promotion = program
     .command('promotion')
