@@ -40,7 +40,7 @@ describe('private output files', () => {
 
     const writtenPath = await writeNewPrivateFile(destination, original);
 
-    expect(writtenPath).toBe(await realpath(destination));
+    expect(await realpath(writtenPath)).toBe(await realpath(destination));
     expect(new Uint8Array(await readFile(destination))).toEqual(original);
     const stat = await lstat(destination);
     expect(stat.isFile()).toBe(true);
