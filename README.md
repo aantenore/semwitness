@@ -118,6 +118,7 @@ The CLI has deliberately **no live `compress` command** in v0.1.
 | `stats --store <dir> --json`                                                  | Count CAS-shaped regular files and bytes plus ignored malformed entries, without reading or reporting source content.             |
 | `replay --fixture <jsonl-file> [--policy <yaml-file>] [--store <dir>] --json` | Re-run a corpus deterministically and check declared mechanical expectations.                                                     |
 | `intent evaluate --normalizer <registry> --fixture <jsonl> [options]`         | Evaluate an exact-alias compiler offline, or an explicitly networked compiler in bounded shadow mode; never serve a cache value.  |
+| `promotion evaluate --evidence <jsonl> --policy <yaml> [options]`             | Compile host-attested held-out usage and quality evidence into a host promotion only when every hard gate passes.                 |
 
 `analyze` and `simulate` accept a file through `--input` or standard input, plus explicit `--role`, `--kind`, `--trust`, optional `--policy`, `--store`, and `--json`. Run `pnpm semwitness <command> --help` for the authoritative options of the checked-out version.
 
@@ -143,7 +144,37 @@ pnpm semwitness replay \
   --json
 ```
 
-The bundled replay runner checks deterministic, mechanical expectations such as selected codec, decision status, and reason codes. It does **not** measure task correctness or promote a policy by itself. The active host preparer therefore also requires a host-owned promotion manifest that binds external held-out task evaluation and usage evidence. Admission requires zero unsafe accepts, zero measured task-quality regressions, and at least 10% median **net** input-token savings after framing, retries, recovery, cache effects, and extra context. Any result remains scoped to the tested corpus, policy, tokenizer, host, model, and tool contract.
+The bundled replay runner checks deterministic, mechanical expectations such as selected codec, decision status, and reason codes. It does **not** measure task correctness or promote a policy by itself. The active host preparer therefore also requires a host-owned promotion manifest that binds external held-out task evaluation and usage evidence. Admission requires zero unsafe accepts, zero measured task-quality regressions, and at least 10% median **net** benefit after framing, cache effects, compressor/sidecar calls, output and reasoning cost, retries, recovery, and extra context. Any result remains scoped to the tested corpus, policy, tokenizer, host, model, and tool contract.
+
+The offline Promotion Evidence Workbench compiles that deployment evidence:
+
+```bash
+pnpm semwitness promotion evaluate \
+  --evidence <held-out-evidence.jsonl> \
+  --policy <apply-verified-policy.yaml> \
+  --manifest-out <new-promotion.json> \
+  --json
+```
+
+The evidence schema carries no prompt, response, path, provider payload, or raw
+error field. It accepts exact observed usage, unique opaque case/trace/quality
+digests, paired baseline/candidate counters, bounded metadata, difficulty/cache
+strata, and bounded outcomes. Metadata identifiers must still be non-sensitive;
+plain digests disclose equality and may permit guessing of low-entropy inputs.
+
+A promotion requires at least 50 complete held-out cases, every combination of
+four difficulty strata and cold/warm cache execution with at least five cases
+per cell, at least ten complete cases per codec, randomized or counterbalanced
+paired runs, exact provider/runtime accounting, zero unsafe accepts and task
+regressions, and unique evidence. Global, aggregate, codec, stratum, cache, and
+cell gates must pass, while per-case regressions remain under runtime-owned hard
+ceilings that the evidence producer cannot weaken. The workbench uses the lower
+of physical input-token savings and host-attested normalized total-cost savings;
+the bound evaluation protocol defines how cache, retry, output, reasoning, and
+compressor costs were included. SemWitness checks the counters and arithmetic,
+but cannot independently reconstruct a provider bill or authenticate the host.
+Valid but unqualified evidence returns exit `2` and never creates the manifest.
+Malformed or unsafe input returns `1`; a qualified result returns `0`.
 
 ## Verified request preparation (v0.5 alpha)
 
@@ -228,13 +259,16 @@ limited to `json-jcs@1`, `application/json` (including `+json`), and
 `typed-semantic` equivalence. Decoder-dependent RLE candidates remain shadow
 evidence and are never sent without an explicit framing protocol.
 
-There is intentionally no bundled promotion manifest. A deployment must supply
-one produced from its own held-out corpus and bind the exact policy, tokenizer
-fingerprint, codec versions, corpus digest, evaluation-report digest, provider,
-model, reviewed prompt/tool contracts, and normalized selector/trust map. The
-adapter checks the live model provider and model ID; the deployment remains
-responsible for deriving and rotating the two contract digests from the exact
-reviewed artifacts it deploys.
+There is intentionally no bundled promotion manifest. A deployment must use its
+own held-out corpus and exact provider/runtime observations with `promotion
+evaluate`; the workbench binds the exact policy, tokenizer fingerprint, codec
+versions, corpus and evaluation-protocol digests, deployment scope, reviewed
+prompt/tool contracts, and normalized selector/trust map. The adapter checks
+the live model provider and model ID; the deployment remains responsible for
+deriving and rotating contract digests from the exact reviewed artifacts it
+deploys. The generated report is deliberately labelled
+`host-attested-unsigned`: deterministic validation and digest binding do not
+authenticate the evidence producer.
 
 Missing/stale evidence, malformed JSON, lossy JavaScript-to-UTF-8 input,
 verification, or storage failure never authorize a rewrite. Observer output
@@ -250,7 +284,9 @@ cancellation is required. See the
 
 ## Codex plugin
 
-The plugin packages the SemWitness skill and bundled local CLI. It is an explicit workflow helper: it does not register a hidden prompt/response interceptor.
+The plugin packages the SemWitness skill and bundled local CLI, including the
+Promotion Evidence Workbench. It is an explicit workflow helper: it does not
+register a hidden prompt/response interceptor.
 
 From a local source checkout, build first and add the repository as a marketplace:
 
@@ -260,16 +296,18 @@ codex plugin marketplace add /absolute/path/to/semwitness
 codex plugin add semwitness@semwitness-local --json
 ```
 
-After the public repository is published with its committed plugin bundle, use
-the versioned release ref for a reproducible installation:
+The released `v0.5.0-alpha.1` ref predates the Promotion Evidence Workbench and
+must not be used for this command. Until a later tag is explicitly published,
+use the local checkout above or use mutable `main` only for development:
 
 ```bash
-codex plugin marketplace add aantenore/semwitness --ref v0.5.0-alpha.1
+codex plugin marketplace add aantenore/semwitness --ref main
 codex plugin add semwitness@semwitness-local --json
 ```
 
-Using `--ref main` is convenient for development, but it follows a mutable
-branch and should not be treated as a reproducible production install.
+`--ref main` follows a mutable branch and is not a reproducible production
+install. Use the next reviewed versioned tag once it exists; this change does
+not publish or imply a release.
 
 Then explicitly ask Codex to use the skill, for example:
 
@@ -424,7 +462,7 @@ See the [Normalizer Lab contract](docs/intent-witness/normalizer-lab.md).
 
 1. Stabilize the v0.1 witness schema, deterministic codecs, adversarial tests, replay gate, and Codex shadow plugin.
 2. Add pluggable tokenizer and codec adapters, including optional neural codecs evaluated behind the same proof and fallback contract.
-3. Operationalize the AI SDK adapter with deployment-owned promotion tooling and provider usage evidence, then add an explicit Codex App Server integration before `turn/start`; the plugin itself will remain shadow-only.
+3. Add AI SDK and optional Promptfoo import/export adapters that produce the Workbench's exact provider/runtime evidence contract, then add an explicit Codex App Server integration before `turn/start`; the plugin itself will never intercept prompts implicitly.
 4. Add a Claude adapter using the host surfaces Claude actually exposes while preserving identical policy, witness, and replay semantics.
 5. Explore signed/HMAC witnesses, privacy-preserving digest modes, policy attestations, and organization-level Compression CI.
 6. Extend Normalizer Lab with independently sampled domain corpora, entity and temporal resolvers, and additional provider adapters; compare exact-hash, consensus, RedisVL/semantic-router, and vCache-style approaches before considering active reuse.
@@ -434,6 +472,7 @@ See the [Normalizer Lab contract](docs/intent-witness/normalizer-lab.md).
 - [Competitive landscape and preliminary name screening](docs/landscape.md)
 - [Threat model](docs/threat-model.md)
 - [Delivery contract](docs/delivery-contract.md)
+- [Promotion Evidence Workbench](docs/promotion-evidence-workbench.md)
 - [IntentWitness architecture and evidence boundary](docs/intent-witness/architecture.md)
 - [IntentWitness market and research landscape](docs/intent-witness/landscape.md)
 - [IntentWitness Normalizer Lab](docs/intent-witness/normalizer-lab.md)
