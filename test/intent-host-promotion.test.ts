@@ -17,6 +17,7 @@ import {
   digestIntentCacheShadowQualificationManifest,
   parseIntentCacheShadowQualificationManifest,
   type IntentCacheBoundArtifact,
+  type IntentCacheDependencyBinding,
   type IntentCacheDomainHmac,
   type IntentCacheOperationHmac,
   type IntentCacheShadowQualificationManifest,
@@ -37,12 +38,19 @@ const OTHER_DOMAIN =
 const OTHER_OPERATION =
   `hmac-sha256:operation:${'7'.repeat(64)}` as IntentCacheOperationHmac;
 
-function binding(id: string): IntentCacheBoundArtifact {
+function artifact(id: string): IntentCacheBoundArtifact {
   return {
     id,
     version: '1',
     digest: sha256(`${id}:1`),
   };
+}
+
+function binding(
+  id: string,
+  status: IntentCacheDependencyBinding['status'] = 'enabled',
+): IntentCacheDependencyBinding {
+  return { status, artifact: artifact(id) };
 }
 
 function fixture(): IntentCacheShadowQualificationManifest {
@@ -65,16 +73,14 @@ function fixture(): IntentCacheShadowQualificationManifest {
     scope: {
       cacheNamespace: `hmac-sha256:cache-namespace:${'4'.repeat(64)}`,
       tenant: `hmac-sha256:tenant:${'5'.repeat(64)}`,
-      domains: [DOMAIN],
-      operations: [
-        {
-          operation: OPERATION,
-          domain: DOMAIN,
-          independentNormalizedIntentWouldHits: 2_995,
-          oraclePermittedEquivalentOpportunities: 2_995,
-          normalizedIntentCoveragePpm: 1_000_000,
-        },
-      ],
+      domain: DOMAIN,
+      operation: {
+        operation: OPERATION,
+        domain: DOMAIN,
+        independentNormalizedIntentWouldHits: 2_995,
+        oraclePermittedEquivalentOpportunities: 2_995,
+        normalizedIntentCoveragePpm: 1_000_000,
+      },
     },
     intentContract: {
       intentIrSchema: 'semwitness.dev/intent-ir/v1alpha1',
@@ -110,7 +116,7 @@ function fixture(): IntentCacheShadowQualificationManifest {
       model: binding('model'),
       output: binding('output'),
       safety: binding('safety'),
-      personalization: binding('personalization'),
+      personalization: binding('disabled-personalization', 'disabled'),
       determinism: binding('determinism'),
       tokenizer: binding('tokenizer'),
       embedding: binding('embedding'),
@@ -221,10 +227,12 @@ describe('intent-cache shadow qualification manifest', () => {
 
     expect(parsed).toEqual(fixture());
     expect(Object.isFrozen(parsed)).toBe(true);
-    expect(Object.isFrozen(parsed.scope.operations)).toBe(true);
-    expect(Object.isFrozen(parsed.scope.operations[0])).toBe(true);
+    expect(Object.isFrozen(parsed.scope)).toBe(true);
+    expect(Object.isFrozen(parsed.scope.operation)).toBe(true);
     expect(Object.isFrozen(parsed.dependencies)).toBe(true);
     expect(Object.isFrozen(parsed.dependencies.prompt)).toBe(true);
+    expect(Object.isFrozen(parsed.dependencies.prompt.artifact)).toBe(true);
+    expect(parsed.dependencies.personalization.status).toBe('disabled');
     expect(digestIntentCacheShadowQualificationManifest(parsed)).toBe(
       digestIntentCacheShadowQualificationManifest(reordered),
     );
@@ -250,24 +258,39 @@ describe('intent-cache shadow qualification manifest', () => {
         string,
         unknown
       >;
-      dependencies[dependency] = { status: 'not-applicable' };
+      const original =
+        fixture().dependencies[
+          dependency as keyof IntentCacheShadowQualificationManifest['dependencies']
+        ];
+      dependencies[dependency] = {
+        status: 'not-applicable',
+        artifact: original.artifact,
+      };
 
       expectMalformed(candidate);
     }
   });
 
-  it('rejects scope inflation to multiple operations or domains', () => {
-    const extraOperation = mutableFixture();
-    extraOperation.scope.operations.push({
-      ...extraOperation.scope.operations[0]!,
-      operation: OTHER_OPERATION,
-    });
+  it('rejects array-shaped operation or domain scope inflation', () => {
+    const operationArray = mutableFixture();
+    const operationScope = operationArray.scope as unknown as Record<
+      string,
+      unknown
+    >;
+    operationScope.operation = [
+      fixture().scope.operation,
+      {
+        ...fixture().scope.operation,
+        operation: OTHER_OPERATION,
+      },
+    ];
 
-    const extraDomain = mutableFixture();
-    extraDomain.scope.domains.push(OTHER_DOMAIN);
+    const domainArray = mutableFixture();
+    const domainScope = domainArray.scope as unknown as Record<string, unknown>;
+    domainScope.domain = [DOMAIN, OTHER_DOMAIN];
 
-    expectMalformed(extraOperation);
-    expectMalformed(extraDomain);
+    expectMalformed(operationArray);
+    expectMalformed(domainArray);
   });
 
   it('rejects any producer-selected critical-intersection count', () => {
@@ -394,21 +417,21 @@ describe('intent-cache shadow qualification manifest', () => {
     expect(reads).toBe(0);
   });
 
-  it('rejects sparse and accessor-backed scope arrays', () => {
+  it('rejects sparse and accessor-backed values in scalar scope fields', () => {
     const sparseCandidate = mutableFixture();
     const sparse: unknown[] = [];
     sparse.length = 1;
-    (sparseCandidate.scope as unknown as Record<string, unknown>).operations =
+    (sparseCandidate.scope as unknown as Record<string, unknown>).operation =
       sparse;
 
     let reads = 0;
     const accessorCandidate = mutableFixture();
-    Object.defineProperty(accessorCandidate.scope.operations, '0', {
+    Object.defineProperty(accessorCandidate.scope, 'operation', {
       enumerable: true,
       configurable: true,
       get() {
         reads += 1;
-        return fixture().scope.operations[0];
+        return fixture().scope.operation;
       },
     });
 

@@ -7,16 +7,15 @@ import {
   SAFE_VERSION_PATTERN,
   type Sha256Digest,
 } from '../domain/types.js';
+import { snapshotDataRecord } from '../host/data-only.js';
 import {
-  snapshotDataRecord,
-  snapshotDenseDataArray,
-} from '../host/data-only.js';
-import {
+  INTENT_CACHE_DEPENDENCY_STATUSES,
   INTENT_CACHE_PROMOTION_TIERS,
   INTENT_CACHE_SHADOW_QUALIFICATION_SCHEMA,
   REQUIRED_INTENT_CACHE_QUALIFICATION_ADVERSARIAL_INTERSECTIONS,
   REQUIRED_INTENT_CACHE_QUALIFICATION_CRITICAL_INTERSECTIONS,
   type IntentCacheBoundArtifact,
+  type IntentCacheDependencyBinding,
   type IntentCacheDependencyInventory,
   type IntentCacheDomainHmac,
   type IntentCacheOperationHmac,
@@ -80,8 +79,8 @@ const VALIDITY_FIELDS = [
 const SCOPE_FIELDS = [
   'cacheNamespace',
   'tenant',
-  'domains',
-  'operations',
+  'domain',
+  'operation',
 ] as const;
 const OPERATION_FIELDS = [
   'operation',
@@ -118,6 +117,7 @@ const DEPENDENCY_FIELDS = [
   'invalidation',
   'key',
 ] as const;
+const DEPENDENCY_BINDING_FIELDS = ['status', 'artifact'] as const;
 const POPULATION_FIELDS = [
   'populationFrameDigest',
   'corpusDigest',
@@ -258,22 +258,13 @@ function parseManifest(value: unknown): IntentCacheShadowQualificationManifest {
   const mandatoryBypassOverhead = parseOverhead(root.mandatoryBypassOverhead);
   const evidence = parseDigestRecord(root.evidence, EVIDENCE_FIELDS);
 
-  const operationHitTotal = scope.operations.reduce(
-    (total, item) => total + BigInt(item.independentNormalizedIntentWouldHits),
-    0n,
-  );
-  const operationOpportunityTotal = scope.operations.reduce(
-    (total, item) =>
-      total + BigInt(item.oraclePermittedEquivalentOpportunities),
-    0n,
-  );
   if (
-    operationHitTotal !== BigInt(population.normalizedIntentWouldHits) ||
-    operationHitTotal !== BigInt(statisticalClaims.falseDiscoveryRate.trials) ||
-    operationOpportunityTotal !==
-      BigInt(
-        statisticalClaims.falseMissRate.oraclePermittedEquivalentOpportunities,
-      ) ||
+    scope.operation.independentNormalizedIntentWouldHits !==
+      population.normalizedIntentWouldHits ||
+    scope.operation.independentNormalizedIntentWouldHits !==
+      statisticalClaims.falseDiscoveryRate.trials ||
+    scope.operation.oraclePermittedEquivalentOpportunities !==
+      statisticalClaims.falseMissRate.oraclePermittedEquivalentOpportunities ||
     BigInt(
       statisticalClaims.falseMissRate.oraclePermittedEquivalentOpportunities,
     ) +
@@ -339,41 +330,23 @@ function parseScope(value: unknown) {
     typeof root.cacheNamespace !== 'string' ||
     !CACHE_NAMESPACE_HMAC.test(root.cacheNamespace) ||
     typeof root.tenant !== 'string' ||
-    !TENANT_HMAC.test(root.tenant)
+    !TENANT_HMAC.test(root.tenant) ||
+    typeof root.domain !== 'string' ||
+    !DOMAIN_HMAC.test(root.domain)
   ) {
     throw malformedManifest();
   }
-  const parsedDomains = parseUniqueSortedStrings(
-    root.domains,
-    1,
-    1,
-    DOMAIN_HMAC,
-  ) as readonly IntentCacheDomainHmac[];
-  const domains = Object.freeze([parsedDomains[0]!]) as readonly [
-    IntentCacheDomainHmac,
-  ];
-  const parsedOperations = snapshotDenseDataArray(root.operations, 1, 1).map(
-    parseQualifiedOperation,
-  );
-  const operations = Object.freeze([parsedOperations[0]!]) as readonly [
-    IntentCacheQualifiedOperation,
-  ];
-  assertUniqueSortedOperations(operations);
-  const domainSet = new Set(domains);
-  if (
-    operations.some((item) => !domainSet.has(item.domain)) ||
-    domains.some(
-      (domain) => !operations.some((operation) => operation.domain === domain),
-    )
-  ) {
+  const domain = root.domain as IntentCacheDomainHmac;
+  const operation = parseQualifiedOperation(root.operation);
+  if (operation.domain !== domain) {
     throw malformedManifest();
   }
   return Object.freeze({
     cacheNamespace:
       root.cacheNamespace as `hmac-sha256:cache-namespace:${string}`,
     tenant: root.tenant as `hmac-sha256:tenant:${string}`,
-    domains,
-    operations,
+    domain,
+    operation,
   });
 }
 
@@ -444,13 +417,29 @@ function parseIntentContract(value: unknown) {
 
 function parseDependencies(value: unknown): IntentCacheDependencyInventory {
   const root = snapshotDataRecord(value, DEPENDENCY_FIELDS);
-  const result: Record<string, IntentCacheBoundArtifact> = Object.create(
+  const result: Record<string, IntentCacheDependencyBinding> = Object.create(
     null,
-  ) as Record<string, IntentCacheBoundArtifact>;
+  ) as Record<string, IntentCacheDependencyBinding>;
   for (const field of DEPENDENCY_FIELDS) {
-    result[field] = parseBoundArtifact(root[field]);
+    result[field] = parseDependencyBinding(root[field]);
   }
   return Object.freeze(result) as unknown as IntentCacheDependencyInventory;
+}
+
+function parseDependencyBinding(value: unknown): IntentCacheDependencyBinding {
+  const root = snapshotDataRecord(value, DEPENDENCY_BINDING_FIELDS);
+  if (
+    typeof root.status !== 'string' ||
+    !(INTENT_CACHE_DEPENDENCY_STATUSES as readonly string[]).includes(
+      root.status,
+    )
+  ) {
+    throw malformedManifest();
+  }
+  return Object.freeze({
+    status: root.status as IntentCacheDependencyBinding['status'],
+    artifact: parseBoundArtifact(root.artifact),
+  });
 }
 
 function parsePopulation(value: unknown) {
@@ -813,35 +802,6 @@ function parseTier(value: unknown): IntentCachePromotionTier {
     throw malformedManifest();
   }
   return value as IntentCachePromotionTier;
-}
-
-function parseUniqueSortedStrings(
-  value: unknown,
-  minimum: number,
-  maximum: number,
-  pattern: RegExp,
-): readonly string[] {
-  const values = snapshotDenseDataArray(value, minimum, maximum);
-  const result = values.map((item) => {
-    if (typeof item !== 'string' || !pattern.test(item)) {
-      throw malformedManifest();
-    }
-    return item;
-  });
-  for (let index = 1; index < result.length; index += 1) {
-    if (result[index - 1]! >= result[index]!) throw malformedManifest();
-  }
-  return result;
-}
-
-function assertUniqueSortedOperations(
-  operations: readonly IntentCacheQualifiedOperation[],
-): void {
-  for (let index = 1; index < operations.length; index += 1) {
-    if (operations[index - 1]!.operation >= operations[index]!.operation) {
-      throw malformedManifest();
-    }
-  }
 }
 
 function parseNonNegativeInteger(value: unknown): number {
