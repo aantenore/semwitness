@@ -150,8 +150,9 @@ normalizer/ontology/policy contracts, a required observed operation binding,
 candidate-index/store contracts, outcome, allowlisted reason, accounting
 disposition, and its recomputed digest. The normalization-bypass receipt binds
 the same shadow literals, source HMAC, normalizer/ontology/policy contracts,
-allowlisted compiler/registry/no-match/abort reason, accounting disposition,
-and its recomputed digest. The workbench parses these strict schemas,
+allowlisted compiler-failure (including abort), registry-mismatch, or no-match
+reason, accounting disposition, and its recomputed digest. The workbench parses
+these strict schemas,
 cross-checks bindings and decisions, and never accepts an isolated opaque
 witness digest as proof.
 
