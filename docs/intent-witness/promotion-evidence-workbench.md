@@ -63,9 +63,13 @@ For the alpha:
 - sampling is cluster-random without safety/difficulty oversampling;
 - every attempted event is emitted as complete or explicit failure;
 - `dropped` is zero and `attempted === emitted`;
-- one effective trial per unique domain-separated HMAC cluster digest is
-  allowed; correlated repeated turns from the same session/family cannot pad a
-  confidence denominator;
+- any population failure is retained in accounting and is a hard qualification
+  failure; an expected store fault is a complete fail-closed case, not a
+  population failure;
+- every emitted event has a unique domain-separated HMAC cluster digest;
+  correlated repeated turns from the same session/family are excluded by the
+  pre-registered sampling protocol and cannot be selectively reduced to one
+  favorable representative;
 - exact-source hits and normalized-intent hits are reported separately;
 - only normalized-intent trials can qualify semantic reuse;
 - misses, bypasses, timeouts, fallbacks, and faults remain in workload value
@@ -90,8 +94,11 @@ The report names and preserves three different denominators:
 
 - `falseDiscoveryRate`: unsafe normalized-intent would-hits divided by all
   normalized-intent would-hits;
-- `unsafeAdmissionRate`: unsafe normalized-intent would-hits divided by all
-  non-equivalent or prohibited normalized-intent opportunities;
+- `unsafeAdmissionRate`: unsafe normalized-intent would-hits divided by every
+  normalized-intent opportunity that is not fully safe-permitted. This is the
+  complement of the safe permission predicate and explicitly includes
+  `different`, `not-comparable`, mismatch, deny, stale, forbidden, regression,
+  and every unknown state whether the runtime would-hit, miss, or bypass;
 - `falseMissRate`: oracle-permitted equivalent misses/bypasses divided by all
   oracle-permitted equivalent opportunities.
 
@@ -125,10 +132,26 @@ pad `n`.
 
 ## Derived safety truth table
 
-Each complete case carries both full content-free `NormalizationWitness` and
-`CacheHitWitness` envelopes plus independent oracle facts. The workbench parses
-their strict schemas, recomputes envelope digests, cross-checks bindings and
-decisions, and never accepts an isolated opaque witness digest as proof.
+Each candidate-bearing complete case carries both full content-free
+`NormalizationWitness` and `CacheHitWitness` envelopes plus independent oracle
+facts. A no-candidate miss or pre-lookup bypass instead carries the full
+normalization witness and a strict, digest-bound, content-free lookup receipt;
+it never invents a cache entry. The workbench parses the strict schemas,
+recomputes envelope digests, cross-checks bindings and decisions, and never
+accepts an isolated opaque witness digest as proof.
+
+Candidate origin is derived rather than trusted. Candidate cases carry
+domain-separated `entrySourceHmac` and `lookupSourceHmac`; the latter must equal
+the normalization witness source digest. Equality means `exact-source` and
+inequality means `normalized-intent`. Plain source SHA-256 is rejected at this
+host boundary. Miss and bypass are separately derived dispositions, never
+values of the origin field.
+
+Each case also carries a content-free operation binding over operation HMAC,
+domain HMAC, intent digest, registry digest, ontology digest, and its own
+recomputed binding digest. It must cross-link the normalization, entry/lookup,
+registry, and ontology evidence. A caller-selected operation label is not
+evidence.
 
 Oracle facts are separate enums, not one aggregate boolean:
 
@@ -170,14 +193,19 @@ The strict shadow qualification manifest binds:
 - `activationCeiling: "shadow-only"`, validity interval, and revocation ID;
 - exactly `tier: "plan"` and `effect: "read"` for the alpha;
 - `candidateOrigin: "normalized-intent"` only;
-- exact HMAC operation/domain allowlists proven by the population sample;
+- exactly one operation HMAC and one domain HMAC proven by the population and
+  adversarial samples for this alpha; multi-operation qualification requires a
+  later schema with an explicit multiple-comparison policy;
 - Intent IR schema, ontology, normalizer, operation registry, resolver,
   normalization policy, and cache-admission policy;
 - a structured tier dependency inventory rather than only a caller-selected
   opaque digest;
 - prompt, tool, planner, provider, model, output, safety, personalization,
   determinism, tokenizer, embedding/candidate-index, store, record
-  authentication, freshness/invalidation, and key contracts as applicable;
+  authentication, freshness/invalidation, and key contracts are all bound in
+  the alpha. An unused capability is represented by an explicit frozen
+  `disabled` adapter artifact; the evidence producer cannot omit it or choose
+  `not-applicable`;
 - cache namespace and tenant scope HMACs;
 - population, corpus, source-log root, sampling, inclusion, evaluator, oracle,
   accounting, and report digests.
@@ -186,10 +214,11 @@ The runtime must later recompute this inventory and intersect the current
 operation with the allowlist. Evidence over one operation or domain cannot
 promote an ontology-wide or tier-wide wildcard.
 
-Each promoted operation requires at least 25 independent normalized-intent
-would-hits and at least 10% normalized-intent coverage on oracle-permitted
-population opportunities. A no-op policy that only hits exact text cannot
-qualify semantic reuse.
+The single qualified operation requires at least 25 independent
+normalized-intent would-hits and at least 10% normalized-intent coverage on
+oracle-permitted population opportunities. The two bundle safety claims must
+also each reach 2,995 effective trials for that same operation and domain. A
+no-op policy that only hits exact text cannot qualify semantic reuse.
 
 ## Accounting contract
 
@@ -210,15 +239,18 @@ The evaluator rejects zero baseline denominators and uses `BigInt` for totals.
 It reports both median per-case paired ratios and ratio-of-sums. All population
 misses, bypasses, faults, and failures participate in workload net value.
 
-Oracle-permitted reusable population slices require at least 10% median and
-aggregate net savings globally and for every pre-registered critical
-`origin × operation × domain × difficulty × cache-regime` intersection. Each
-critical cell has a non-weakenable minimum of five cases and five would-hits.
-Per-case and p10 regression ceilings block a few large easy wins from hiding a
-bad tail.
+Oracle-permitted normalized-intent reusable population slices require at least
+10% median and aggregate net savings globally and in all eight evaluator-owned
+`difficulty × cache-regime` cells for the one bound operation/domain. Each cell
+has a non-weakenable minimum of five cases and five would-hits. The p10 savings
+floor is zero and no individual case may regress by more than 50% (500,000
+ppm). Evidence cannot omit or redefine critical cells.
 
 Mandatory-bypass adversarial slices instead have non-weakenable median and
-aggregate cost/latency overhead ceilings. They are not expected to save tokens.
+aggregate cost and latency overhead ceilings of 25% (250,000 ppm) in every
+scenario/difficulty/cache cell. They are not expected to save tokens. The
+`equivalent-paraphrase` scenario is a positive safe-hit conformance case and is
+not included in these mandatory-bypass overhead cells.
 
 Provider-prefix/KV cache and application semantic-cache effects have separate
 ledgers and cannot be converted into one another.
@@ -233,6 +265,10 @@ artifact manifests and integrity evidence.
 Reports exclude prompts, responses, canonical slots, tenant names, principals,
 paths, URLs, raw errors, and tool payloads. HMAC equality still reveals repeated
 events to authorized readers, so access and retention remain deployment policy.
+The private evidence file also contains unkeyed high-entropy intent, value, and
+witness digests from the base envelopes; these reveal equality and may be
+guessable if an upstream artifact has low entropy. Reports and manifests do not
+copy the full envelopes.
 
 The report declares:
 
@@ -258,11 +294,18 @@ semwitness.dev/intent-cache-promotion-workbench-result/v1alpha1
 semwitness.dev/intent-cache-shadow-qualification/v1alpha1
 ```
 
-The strict JSONL contains one binding followed by ordered population and
-adversarial cases. Limits are 50,000 cases, 256 KiB per line, and 128 MiB per
-document. The plan alpha fits within this bounded in-memory parser. A later
-observation or response qualification must use a separately versioned streaming
-boundary instead of weakening these limits.
+The strict JSONL contains one binding followed by contiguous ordered population
+cases and then contiguous ordered adversarial cases. Closed record variants are
+`population-complete`, `population-failure`, `adversarial-complete`, and
+`adversarial-failure`. Population is exactly plan/read. Adversarial evidence is
+still plan-tier but may use write or irreversible effects only to prove the
+`side-effect` mandatory bypass. Observation and response are malformed in every
+cohort. Every runtime decision remains `mode: "shadow"` and `applied: false`.
+
+Limits are 50,000 cases, 256 KiB per line, and 128 MiB per document. The plan
+alpha fits within this bounded in-memory parser. A later observation or response
+qualification must use a separately versioned streaming boundary instead of
+weakening these limits.
 
 ```bash
 semwitness intent promotion evaluate \
@@ -309,20 +352,22 @@ Out of scope:
 
 ## Required adversarial scenarios
 
-Every required scenario is crossed with all four difficulty strata and cold/warm
-cache regimes, with at least five cases per intersection:
+Every required scenario is crossed with the literal difficulty strata `simple`,
+`medium`, `complex`, and `adversarial` and the cache regimes `cold` and `warm`,
+with at least five cases per intersection. The evaluator owns this exact matrix;
+the evidence cannot weaken it.
 
-```text
-equivalent-paraphrase
-distinct-near-miss
-cross-tenant
-authorization-drift
-context-drift
-stale
-dependency-drift
-side-effect
-store-fault
-```
+| Primary scenario      | Expected disposition |
+| --------------------- | -------------------- |
+| equivalent-paraphrase | safe would-hit       |
+| distinct-near-miss    | mandatory bypass     |
+| cross-tenant          | mandatory bypass     |
+| authorization-drift   | mandatory bypass     |
+| context-drift         | mandatory bypass     |
+| stale                 | mandatory bypass     |
+| dependency-drift      | mandatory bypass     |
+| side-effect           | mandatory bypass     |
+| store-fault           | mandatory bypass     |
 
 Phenomenon tags additionally cover negation, quantifier, entity, unit, number,
 time, locale, output contract, coreference, prompt injection, Unicode, model,
@@ -330,24 +375,26 @@ tool, policy, resolver, and invalidation drift.
 
 ## Acceptance criteria
 
-| ID   | Requirement               | Acceptance                                                                                                                  | Verification                  |
-| ---- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| IP1  | Contract isolation        | Compression manifests and intent-cache qualification are mutually invalid                                                   | Cross-schema tests            |
-| IP2  | Strict payload-free input | Unknown/raw fields, duplicate keys, oversized lines, sparse/accessor values, and malformed Unicode fail                     | Parser/privacy tests          |
-| IP3  | Population completeness   | Attempted equals emitted, dropped is zero, every event is complete or failed, and source-log root/counters bind             | Selective-reporting tests     |
-| IP4  | Independent denominator   | Cluster HMACs are unique; exact/adversarial/repeated trials cannot pad semantic bounds                                      | Denominator attack tests      |
-| IP5  | Explicit estimands        | FDR, unsafe-admission rate, and false-miss rate retain separate denominators                                                | Metric truth-table tests      |
-| IP6  | Adversarial intersections | Every scenario × difficulty × cache cell meets its minimum and never enters statistical n                                   | Missing/intersection tests    |
-| IP7  | Safety truth table        | Only the complete safe conjunction may would-hit; every unknown/not-comparable state fails                                  | Exhaustive truth-table tests  |
-| IP8  | Statistical boundary      | Exact 2,994/2,995 plan boundary holds for both safety estimands; future response-boundary math remains exact                 | Deterministic boundary tests  |
-| IP9  | Scoped qualification      | Read-only plan tier, normalized origin, exact operations/domains, structured dependencies, validity and revocation are bound | Manifest mutation tests       |
-| IP10 | Useful coverage           | Each promoted operation has 25 independent hits and 10% semantic coverage                                                   | No-op/partial-operation tests |
-| IP11 | Net value                 | Global and critical reusable intersections pass median, ratio-of-sums, p10, and per-case gates                              | Weighted/Simpson attack tests |
-| IP12 | Fail-closed overhead      | Mandatory-bypass/fault intersections stay within cost/latency overhead ceilings                                             | Fault/overhead tests          |
-| IP13 | Honest provenance         | Output is unsigned and structurally shadow-only; future active parsers reject it                                            | Snapshot/cross-mode tests     |
-| IP14 | Safe CLI                  | Exit `0/2/1` is stable and a new private manifest exists only on `0`                                                        | CLI and I/O fault tests       |
-| IP15 | Plugin delivery           | Bundled plugin exposes the evaluator without workspace dependencies                                                         | Isolated plugin smoke         |
-| IP16 | Package delivery          | Installed tarball resolves `semwitness/intent/host` declarations and runtime                                                | Pack-install smoke            |
+| ID   | Requirement               | Acceptance                                                                                                               | Verification                  |
+| ---- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------- |
+| IP1  | Contract isolation        | Compression manifests and intent-cache qualification are mutually invalid                                                | Cross-schema tests            |
+| IP2  | Strict payload-free input | Unknown/raw fields, duplicate keys, oversized lines, sparse/accessor values, and malformed Unicode fail                  | Parser/privacy tests          |
+| IP3  | Population completeness   | Attempted equals emitted, dropped is zero, source-log root/counters bind, and any explicit population failure blocks     | Selective-reporting tests     |
+| IP4  | Independent denominator   | Cluster HMACs are unique; exact/adversarial/repeated trials cannot pad semantic bounds                                   | Denominator attack tests      |
+| IP5  | Explicit estimands        | FDR, unsafe-admission rate, and false-miss rate retain separate denominators                                             | Metric truth-table tests      |
+| IP6  | Adversarial intersections | Every scenario × difficulty × cache cell meets its minimum and never enters statistical n                                | Missing/intersection tests    |
+| IP7  | Safety truth table        | Only the complete safe conjunction may would-hit; every unknown/not-comparable state fails                               | Exhaustive truth-table tests  |
+| IP8  | Statistical boundary      | Exact 2,994/2,995 plan boundary holds for both safety estimands; future response-boundary math remains exact             | Deterministic boundary tests  |
+| IP9  | Scoped qualification      | Read-only plan tier, one operation/domain, every dependency slot, validity and revocation are bound                      | Manifest mutation tests       |
+| IP10 | Useful coverage           | The one qualified operation has 25 independent hits and 10% semantic coverage                                            | No-op/partial-operation tests |
+| IP11 | Net value                 | Global and critical reusable intersections pass median, ratio-of-sums, p10, and per-case gates                           | Weighted/Simpson attack tests |
+| IP12 | Fail-closed overhead      | Mandatory-bypass/fault intersections stay within cost/latency overhead ceilings                                          | Fault/overhead tests          |
+| IP13 | Honest provenance         | Output is unsigned and structurally shadow-only; future active parsers reject it                                         | Snapshot/cross-mode tests     |
+| IP14 | Safe CLI                  | Exit `0/2/1` is stable and a new private manifest exists only on `0`                                                     | CLI and I/O fault tests       |
+| IP15 | Plugin delivery           | Bundled plugin exposes the evaluator without workspace dependencies                                                      | Isolated plugin smoke         |
+| IP16 | Package delivery          | Installed tarball resolves `semwitness/intent/host` declarations and runtime                                             | Pack-install smoke            |
+| IP17 | Derived identity          | Source relation and operation/domain scope are recomputed from HMACs, witnesses and binding digests, never caller labels | Origin/scope-inflation tests  |
+| IP18 | Cohort semantics          | Population is plan/read; side-effect adversarial cases may be write/irreversible only to prove mandatory bypass          | Cohort mutation tests         |
 
 ## Acceptance threshold
 
