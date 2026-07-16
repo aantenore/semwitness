@@ -18,6 +18,7 @@ import {
   parseIntentIR,
   parseNormalizationWitness,
   verifyCacheHitWitness,
+  verifyCacheHitWitnessIntegrity,
   verifyNormalizationWitness,
   verifyNormalizationWitnessIntegrity,
   type CacheBinding,
@@ -599,9 +600,34 @@ describe('cache-hit shadow admission', () => {
       verified: true,
       reasons: [],
     });
+    expect(verifyCacheHitWitnessIntegrity(witness, normal)).toEqual({
+      verified: true,
+      reasons: [],
+    });
     expect(verifyCacheHitWitness(witness)).toEqual({
       verified: false,
       reasons: ['CACHE_NORMALIZATION_WITNESS_INVALID'],
+    });
+  });
+
+  it('keeps integrity-only verification bound to the full normalization envelope', () => {
+    const normal = normalization();
+    const { entry, lookup } = ttlPair(normal);
+    const witness = admit(entry, lookup, normal);
+    const unrelated = normalization('Una sorgente differente');
+
+    expect(verifyCacheHitWitnessIntegrity(witness, unrelated)).toMatchObject({
+      verified: false,
+      reasons: expect.arrayContaining(['CACHE_NORMALIZATION_WITNESS_INVALID']),
+    });
+    expect(
+      verifyCacheHitWitnessIntegrity(witness, {
+        ...normal,
+        witnessDigest: sha256('tampered-normalization-witness'),
+      }),
+    ).toMatchObject({
+      verified: false,
+      reasons: expect.arrayContaining(['CACHE_NORMALIZATION_WITNESS_INVALID']),
     });
   });
 
