@@ -75,6 +75,29 @@ describe('private output files', () => {
     ).rejects.toMatchObject({ code: 'CAS_WRITE_FAILED' });
     expect(await readFile(target, 'utf8')).toBe('UNCHANGED_TARGET');
   });
+
+  it('refuses a symbolic-link ancestor without writing through it', async () => {
+    if (process.platform === 'win32') {
+      return;
+    }
+    const root = await temporaryRoot();
+    const outside = join(root, 'outside');
+    const outsideParent = join(outside, 'nested');
+    const linkedAncestor = join(root, 'linked-ancestor');
+    const escapedTarget = join(outsideParent, 'retrieved.bin');
+    await mkdir(outsideParent, { recursive: true });
+    await symlink(outside, linkedAncestor);
+
+    await expect(
+      writeNewPrivateFile(
+        join(linkedAncestor, 'nested', 'retrieved.bin'),
+        new TextEncoder().encode('MUST_NOT_ESCAPE'),
+      ),
+    ).rejects.toMatchObject({ code: 'CAS_WRITE_FAILED' });
+    await expect(lstat(escapedTarget)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
 });
 
 describe('content-free CAS statistics', () => {
