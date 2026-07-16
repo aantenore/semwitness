@@ -67,7 +67,7 @@
   },
   "packageManager": "pnpm@11.13.0",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && pnpm run build:plugin",
+    "build": "tsc -p tsconfig.build.json && node scripts/build-plugin.mjs",
     "build:plugin": "node scripts/build-plugin.mjs",
     "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test",
     "dev": "tsx src/entrypoints/cli.ts",
@@ -75,7 +75,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "oxlint --deny-warnings src test scripts",
-    "prepack": "pnpm run build",
+    "prepack": "npm run build",
+    "prepare": "npm run build",
     "semwitness": "tsx src/entrypoints/cli.ts",
     "start": "node dist/entrypoints/cli.js",
     "test": "vitest run",
