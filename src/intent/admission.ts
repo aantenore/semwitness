@@ -2,7 +2,10 @@ import { canonicalJson, toJsonValue } from '../domain/canonical-json.js';
 import { hashCanonical, sha256 } from '../domain/hash.js';
 import type { Sha256Digest } from '../domain/types.js';
 import { canonicalizeRevisions, parseIntentIR } from './canonical.js';
-import { verifyNormalizationWitness } from './normalization.js';
+import {
+  verifyNormalizationWitness,
+  verifyNormalizationWitnessIntegrity,
+} from './normalization.js';
 import {
   parseCacheEntryDocument,
   parseCacheEntryPayloadDocument,
@@ -200,16 +203,7 @@ export function verifyCacheHitWitness(
       normalizationVerified = verification.verified;
       if (
         !verification.verified ||
-        currentNormalization.witnessDigest !==
-          witness.normalization.witnessDigest ||
-        currentNormalization.sourceDigest !==
-          witness.normalization.sourceDigest ||
-        currentNormalization.intentDigest !==
-          witness.normalization.intentDigest ||
-        currentNormalization.decision.verdict !==
-          witness.normalization.verdict ||
-        canonicalJson(toJsonValue(currentNormalization.decision.reasons)) !==
-          canonicalJson(toJsonValue(witness.normalization.reasons))
+        !cacheWitnessMatchesNormalization(witness, currentNormalization)
       ) {
         reasons.push('CACHE_NORMALIZATION_WITNESS_INVALID');
       }
@@ -231,6 +225,73 @@ export function verifyCacheHitWitness(
   }
 
   return { verified: reasons.length === 0, reasons: [...new Set(reasons)] };
+}
+
+/**
+ * Checks payload-free envelope integrity, cross-links, and the derived shadow
+ * decision. It does not prove semantic equivalence and never authorizes a hit.
+ */
+export function verifyCacheHitWitnessIntegrity(
+  input: unknown,
+  normalizationInput: unknown,
+): CacheHitVerification {
+  let witness: CacheHitWitness;
+  try {
+    witness = parseCacheHitWitnessDocument(input);
+  } catch {
+    return { verified: false, reasons: ['INTENT_MALFORMED'] };
+  }
+
+  const reasons: IntentReasonCode[] = [];
+  if (recomputeCacheHitWitnessDigest(witness) !== witness.witnessDigest) {
+    reasons.push('CACHE_WITNESS_TAMPERED');
+  }
+
+  let normalization: NormalizationWitness;
+  try {
+    normalization = parseNormalizationWitnessDocument(normalizationInput);
+  } catch {
+    reasons.push('INTENT_MALFORMED', 'CACHE_NORMALIZATION_WITNESS_INVALID');
+    return {
+      verified: false,
+      reasons: [...new Set(reasons)],
+    };
+  }
+  const normalizationVerification =
+    verifyNormalizationWitnessIntegrity(normalization);
+  if (
+    !normalizationVerification.verified ||
+    !cacheWitnessMatchesNormalization(witness, normalization)
+  ) {
+    reasons.push('CACHE_NORMALIZATION_WITNESS_INVALID');
+  }
+
+  const expected = evaluateAdmission(
+    witness.entry,
+    witness.lookup,
+    normalization,
+    normalizationVerification.verified,
+    witness.lookup.binding.effect,
+  );
+  if (!sameDecision(expected, witness.decision)) {
+    reasons.push('CACHE_WITNESS_TAMPERED');
+  }
+
+  return { verified: reasons.length === 0, reasons: [...new Set(reasons)] };
+}
+
+function cacheWitnessMatchesNormalization(
+  witness: CacheHitWitness,
+  normalization: NormalizationWitness,
+): boolean {
+  return (
+    normalization.witnessDigest === witness.normalization.witnessDigest &&
+    normalization.sourceDigest === witness.normalization.sourceDigest &&
+    normalization.intentDigest === witness.normalization.intentDigest &&
+    normalization.decision.verdict === witness.normalization.verdict &&
+    canonicalJson(toJsonValue(normalization.decision.reasons)) ===
+      canonicalJson(toJsonValue(witness.normalization.reasons))
+  );
 }
 
 function evaluateAdmission(
