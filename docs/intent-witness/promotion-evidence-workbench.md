@@ -146,7 +146,7 @@ Complete cases use a closed three-path union:
   normalization witness.
 
 The lookup receipt binds `mode: "shadow"`, `applied: false`, source HMAC,
-normalizer/ontology/policy contracts, optional observed operation binding,
+normalizer/ontology/policy contracts, a required observed operation binding,
 candidate-index/store contracts, outcome, allowlisted reason, accounting
 disposition, and its recomputed digest. The normalization-bypass receipt binds
 the same shadow literals, source HMAC, normalizer/ontology/policy contracts,
@@ -339,6 +339,7 @@ semwitness.dev/intent-cache-promotion-evidence/v1alpha1
 semwitness.dev/intent-cache-promotion-evaluation-report/v1alpha1
 semwitness.dev/intent-cache-promotion-workbench-result/v1alpha1
 semwitness.dev/intent-cache-shadow-qualification/v1alpha1
+semwitness.dev/intent-cache-operation-binding/v1alpha1
 semwitness.dev/intent-cache-lookup-receipt/v1alpha1
 semwitness.dev/intent-normalization-bypass-receipt/v1alpha1
 ```
