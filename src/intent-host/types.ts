@@ -143,24 +143,36 @@ export interface IntentCacheBoundArtifact {
   readonly digest: Sha256Digest;
 }
 
+export const INTENT_CACHE_DEPENDENCY_STATUSES = [
+  'enabled',
+  'disabled',
+] as const;
+export type IntentCacheDependencyStatus =
+  (typeof INTENT_CACHE_DEPENDENCY_STATUSES)[number];
+
+export interface IntentCacheDependencyBinding {
+  readonly status: IntentCacheDependencyStatus;
+  readonly artifact: IntentCacheBoundArtifact;
+}
+
 export interface IntentCacheDependencyInventory {
-  readonly prompt: IntentCacheBoundArtifact;
-  readonly tool: IntentCacheBoundArtifact;
-  readonly planner: IntentCacheBoundArtifact;
-  readonly provider: IntentCacheBoundArtifact;
-  readonly model: IntentCacheBoundArtifact;
-  readonly output: IntentCacheBoundArtifact;
-  readonly safety: IntentCacheBoundArtifact;
-  readonly personalization: IntentCacheBoundArtifact;
-  readonly determinism: IntentCacheBoundArtifact;
-  readonly tokenizer: IntentCacheBoundArtifact;
-  readonly embedding: IntentCacheBoundArtifact;
-  readonly candidateIndex: IntentCacheBoundArtifact;
-  readonly store: IntentCacheBoundArtifact;
-  readonly recordAuthentication: IntentCacheBoundArtifact;
-  readonly freshness: IntentCacheBoundArtifact;
-  readonly invalidation: IntentCacheBoundArtifact;
-  readonly key: IntentCacheBoundArtifact;
+  readonly prompt: IntentCacheDependencyBinding;
+  readonly tool: IntentCacheDependencyBinding;
+  readonly planner: IntentCacheDependencyBinding;
+  readonly provider: IntentCacheDependencyBinding;
+  readonly model: IntentCacheDependencyBinding;
+  readonly output: IntentCacheDependencyBinding;
+  readonly safety: IntentCacheDependencyBinding;
+  readonly personalization: IntentCacheDependencyBinding;
+  readonly determinism: IntentCacheDependencyBinding;
+  readonly tokenizer: IntentCacheDependencyBinding;
+  readonly embedding: IntentCacheDependencyBinding;
+  readonly candidateIndex: IntentCacheDependencyBinding;
+  readonly store: IntentCacheDependencyBinding;
+  readonly recordAuthentication: IntentCacheDependencyBinding;
+  readonly freshness: IntentCacheDependencyBinding;
+  readonly invalidation: IntentCacheDependencyBinding;
+  readonly key: IntentCacheDependencyBinding;
 }
 
 export interface IntentCacheQualifiedOperation {
@@ -211,8 +223,8 @@ export interface IntentCacheShadowQualificationManifest {
   readonly scope: {
     readonly cacheNamespace: IntentCacheNamespaceHmac;
     readonly tenant: IntentCacheTenantHmac;
-    readonly domains: readonly [IntentCacheDomainHmac];
-    readonly operations: readonly [IntentCacheQualifiedOperation];
+    readonly domain: IntentCacheDomainHmac;
+    readonly operation: IntentCacheQualifiedOperation;
   };
   readonly intentContract: {
     readonly intentIrSchema: 'semwitness.dev/intent-ir/v1alpha1';
