@@ -378,10 +378,11 @@ uses the bound conformance-only write/irreversible probe described above.
 Observation and response are malformed in every cohort. Every runtime decision
 remains `mode: "shadow"` and `applied: false`.
 
-The public evaluator accepts bounded JSONL bytes and invokes this strict parser
-before deriving any report or manifest. Unbranded caller-constructed objects
-cannot reach the qualification function, and reported case digests are copied
-only from parser-verified records.
+The public evaluator accepts bounded JSONL bytes/text or an untrusted object
+fixture and routes every form through the strict parser before deriving any
+report or manifest. Raw derivation remains private; caller-constructed objects
+are snapshotted and revalidated, and reported case digests are copied only from
+parser-verified records.
 
 Limits are 50,000 cases, 256 KiB per line, and 128 MiB per document. The plan
 alpha fits within this bounded in-memory parser. A later observation or response
