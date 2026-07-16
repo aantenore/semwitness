@@ -34,7 +34,9 @@ Qualify a frozen, tier-scoped semantic-reuse bundle only when evidence shows:
   resolver, policy, model, tool, store, freshness, and evaluation contracts that
   were actually tested.
 
-Every current runtime decision remains `applied: false`.
+Every current runtime decision remains `applied: false`. The first alpha
+qualification target is exactly the `plan` tier for read intents. Observation
+and response qualification remain later schema and runtime increments.
 
 ## Product boundary
 
@@ -105,10 +107,13 @@ upper95Ppm = ceil(upper95 * 1,000,000)
 ```
 
 The alpha requires zero observed unsafe hits and gates both normalized-intent
-`falseDiscoveryRate` and `unsafeAdmissionRate` separately:
+`falseDiscoveryRate` and `unsafeAdmissionRate` separately for `plan`:
 
-- `plan`/`observation`: 2,994 trials fail at 1,001 ppm; 2,995 pass at 1,000 ppm;
-- `response`: 29,955 trials fail at 101 ppm; 29,956 pass at 100 ppm.
+- 2,994 trials fail at 1,001 ppm; 2,995 pass at 1,000 ppm.
+
+A later, separately versioned response qualification would require 29,956
+independent trials to pass a 100 ppm ceiling; 29,955 fail at 101 ppm. The alpha
+does not accept observation or response evidence.
 
 Each reported bound is an individual one-sided 95% claim; the workbench makes no
 family-wise confidence claim. Any future simultaneous per-operation or
@@ -127,6 +132,7 @@ decisions, and never accepts an isolated opaque witness digest as proof.
 
 Oracle facts are separate enums, not one aggregate boolean:
 
+- ordinary and candidate artifact digests plus a unique quality-evidence digest;
 - artifact relation: `equivalent`, `different`, or `not-comparable`;
 - scope: `match`, `mismatch`, or `unknown`;
 - authorization: `current-allow`, `deny`, or `unknown`;
@@ -149,6 +155,8 @@ AND task-quality=pass
 
 Every `different`, `not-comparable`, deny, mismatch, stale, forbidden, unknown,
 regression, or not-evaluated would-hit is unsafe. Unknown never means allow.
+The candidate artifact digest must match the cache entry `valueDigest`; otherwise
+the case is malformed rather than merely unsafe.
 
 Store-fault cases distinguish `expectedFaultObserved`,
 `ordinaryPathSucceeded`, `candidateFallbackSucceeded`, and
@@ -160,7 +168,7 @@ the candidate fails closed and the ordinary path succeeds.
 The strict shadow qualification manifest binds:
 
 - `activationCeiling: "shadow-only"`, validity interval, and revocation ID;
-- exactly one tier and `effect: "read"` for the alpha;
+- exactly `tier: "plan"` and `effect: "read"` for the alpha;
 - `candidateOrigin: "normalized-intent"` only;
 - exact HMAC operation/domain allowlists proven by the population sample;
 - Intent IR schema, ontology, normalizer, operation registry, resolver,
@@ -252,7 +260,9 @@ semwitness.dev/intent-cache-shadow-qualification/v1alpha1
 
 The strict JSONL contains one binding followed by ordered population and
 adversarial cases. Limits are 50,000 cases, 256 KiB per line, and 128 MiB per
-document. These limits allow the response-tier boundary while remaining finite.
+document. The plan alpha fits within this bounded in-memory parser. A later
+observation or response qualification must use a separately versioned streaming
+boundary instead of weakening these limits.
 
 ```bash
 semwitness intent promotion evaluate \
@@ -292,6 +302,7 @@ Out of scope:
 - Replacing original prompt text with Intent IR.
 - Treating embeddings, similarity, confidence, or consensus as authority.
 - Promoting exact-source reuse as semantic reuse.
+- Qualifying observation or response tiers in this alpha schema.
 - Reusing response/observation artifacts for non-read effects.
 - Claiming provider KV reuse for differently tokenized paraphrases.
 - Claiming post-generation compaction reduces billed output tokens.
@@ -328,8 +339,8 @@ tool, policy, resolver, and invalidation drift.
 | IP5  | Explicit estimands        | FDR, unsafe-admission rate, and false-miss rate retain separate denominators                                                | Metric truth-table tests      |
 | IP6  | Adversarial intersections | Every scenario × difficulty × cache cell meets its minimum and never enters statistical n                                   | Missing/intersection tests    |
 | IP7  | Safety truth table        | Only the complete safe conjunction may would-hit; every unknown/not-comparable state fails                                  | Exhaustive truth-table tests  |
-| IP8  | Statistical boundary      | Exact 2,994/2,995 and 29,955/29,956 boundaries hold for both safety estimands                                               | Deterministic boundary tests  |
-| IP9  | Scoped qualification      | One read-only tier, normalized origin, exact operations/domains, structured dependencies, validity and revocation are bound | Manifest mutation tests       |
+| IP8  | Statistical boundary      | Exact 2,994/2,995 plan boundary holds for both safety estimands; future response-boundary math remains exact                 | Deterministic boundary tests  |
+| IP9  | Scoped qualification      | Read-only plan tier, normalized origin, exact operations/domains, structured dependencies, validity and revocation are bound | Manifest mutation tests       |
 | IP10 | Useful coverage           | Each promoted operation has 25 independent hits and 10% semantic coverage                                                   | No-op/partial-operation tests |
 | IP11 | Net value                 | Global and critical reusable intersections pass median, ratio-of-sums, p10, and per-case gates                              | Weighted/Simpson attack tests |
 | IP12 | Fail-closed overhead      | Mandatory-bypass/fault intersections stay within cost/latency overhead ceilings                                             | Fault/overhead tests          |
