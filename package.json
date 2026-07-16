@@ -15,6 +15,7 @@
   },
   "keywords": [
     "agentic-ai",
+    "ai-sdk-middleware",
     "context-compression",
     "intent-normalization",
     "llm-evaluation",
@@ -44,6 +45,14 @@
     "./intent/openai-compatible": {
       "types": "./dist/adapters/openai-compatible-intent-compiler.d.ts",
       "import": "./dist/adapters/openai-compatible-intent-compiler.js"
+    },
+    "./host": {
+      "types": "./dist/host/index.d.ts",
+      "import": "./dist/host/index.js"
+    },
+    "./ai-sdk": {
+      "types": "./dist/ai-sdk/index.d.ts",
+      "import": "./dist/ai-sdk/index.js"
     }
   },
   "bin": {
@@ -71,6 +80,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.5",
+    "@ai-sdk/provider": "4.0.2",
     "ai": "7.0.17",
     "commander": "15.0.0",
     "yaml": "2.9.0",
