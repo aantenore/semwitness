@@ -1,6 +1,6 @@
 import { constants } from 'node:fs';
 import { chmod, lstat, open, opendir, realpath } from 'node:fs/promises';
-import { basename, dirname, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import { parseDocument } from 'yaml';
 import { SemWitnessError } from '../domain/errors.js';
 import {
@@ -142,8 +142,9 @@ export async function writeNewPrivateFile(
       'An explicit file destination is required',
     );
   }
-  const target = resolve(destination);
+  const target = await normalizeTrustedRootAlias(resolve(destination));
   const parent = dirname(target);
+  await assertNoExistingSymbolicLinkComponents(target);
   let parentStat;
   try {
     parentStat = await lstat(parent);
@@ -159,8 +160,7 @@ export async function writeNewPrivateFile(
       'Output parent must be a real directory',
     );
   }
-  const parentReal = await realpath(parent);
-  const safeTarget = resolve(parentReal, basename(target));
+  const safeTarget = target;
   const noFollow = process.platform === 'win32' ? 0 : constants.O_NOFOLLOW;
   let handle;
   try {
@@ -184,6 +184,91 @@ export async function writeNewPrivateFile(
   } finally {
     await handle?.close().catch(() => undefined);
   }
+}
+
+async function assertNoExistingSymbolicLinkComponents(
+  target: string,
+): Promise<void> {
+  for (const candidate of outputPathComponents(target)) {
+    try {
+      const stat = await lstat(candidate);
+      if (stat.isSymbolicLink()) {
+        throw unsafeOutputPath();
+      }
+    } catch (error) {
+      if (hasCode(error, 'ENOENT')) {
+        break;
+      }
+      if (error instanceof SemWitnessError) {
+        throw error;
+      }
+      throw unsafeOutputPath(error);
+    }
+  }
+}
+
+async function normalizeTrustedRootAlias(target: string): Promise<string> {
+  if (process.platform === 'win32') {
+    return target;
+  }
+
+  // macOS exposes root-owned aliases such as /var -> /private/var. Resolve only
+  // that privileged boundary; every component below it remains no-follow.
+  const rootAlias = outputPathComponents(target)[1];
+  if (rootAlias === undefined) {
+    return target;
+  }
+  let rootAliasStat;
+  try {
+    rootAliasStat = await lstat(rootAlias);
+  } catch (error) {
+    if (hasCode(error, 'ENOENT')) {
+      return target;
+    }
+    throw unsafeOutputPath(error);
+  }
+  if (!rootAliasStat.isSymbolicLink()) {
+    return target;
+  }
+  if (rootAliasStat.uid !== 0) {
+    throw unsafeOutputPath();
+  }
+
+  try {
+    const realRoot = await realpath(rootAlias);
+    const realRootStat = await lstat(realRoot);
+    if (!realRootStat.isDirectory() || realRootStat.isSymbolicLink()) {
+      throw unsafeOutputPath();
+    }
+    return resolve(realRoot, relative(rootAlias, target));
+  } catch (error) {
+    if (error instanceof SemWitnessError) {
+      throw error;
+    }
+    throw unsafeOutputPath(error);
+  }
+}
+
+function outputPathComponents(target: string): readonly string[] {
+  const components: string[] = [];
+  let component = target;
+  while (true) {
+    components.push(component);
+    const parent = dirname(component);
+    if (parent === component) {
+      break;
+    }
+    component = parent;
+  }
+  return components.reverse();
+}
+
+function unsafeOutputPath(cause?: unknown): SemWitnessError {
+  return new SemWitnessError(
+    'CAS_WRITE_FAILED',
+    'Refusing to overwrite or follow an unsafe output path',
+    cause,
+  );
 }
 
 export interface CasStats {

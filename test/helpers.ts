@@ -21,9 +21,10 @@ export class DeterministicByteTokenizer implements TokenizerAdapter {
   constructor(
     id = DEFAULT_POLICY.tokenizerId,
     reliability: TokenCount['reliability'] = 'exact',
+    fingerprint = `test/byte-tokenizer:${reliability}`,
   ) {
     this.id = id;
-    this.fingerprint = `test/byte-tokenizer:${reliability}`;
+    this.fingerprint = fingerprint;
     this.#reliability = reliability;
   }
 
