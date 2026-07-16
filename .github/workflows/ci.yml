@@ -67,6 +67,8 @@ jobs:
             for (const name of [
               "parseIntentCacheShadowQualificationManifest",
               "digestIntentCacheShadowQualificationManifest",
+              "evaluateIntentCachePromotionEvidence",
+              "parseIntentCachePromotionEvidenceJsonl",
               "parseIntentCacheOperationBinding",
               "parseIntentCacheLookupReceipt",
               "parseIntentNormalizationBypassReceipt"

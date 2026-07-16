@@ -118,6 +118,7 @@ The CLI has deliberately **no live `compress` command** in v0.1.
 | `stats --store <dir> --json`                                                  | Count CAS-shaped regular files and bytes plus ignored malformed entries, without reading or reporting source content.             |
 | `replay --fixture <jsonl-file> [--policy <yaml-file>] [--store <dir>] --json` | Re-run a corpus deterministically and check declared mechanical expectations.                                                     |
 | `intent evaluate --normalizer <registry> --fixture <jsonl> [options]`         | Evaluate an exact-alias compiler offline, or an explicitly networked compiler in bounded shadow mode; never serve a cache value.  |
+| `intent promotion evaluate --evidence <jsonl> [options]`                      | Qualify payload-free intent-cache evidence for one plan/read operation in shadow mode; never serve a cache value.                 |
 | `promotion evaluate --evidence <jsonl> --policy <yaml> [options]`             | Compile host-attested held-out usage and quality evidence into a host promotion only when every hard gate passes.                 |
 
 `analyze` and `simulate` accept a file through `--input` or standard input, plus explicit `--role`, `--kind`, `--trust`, optional `--policy`, `--store`, and `--json`. Run `pnpm semwitness <command> --help` for the authoritative options of the checked-out version.
@@ -146,7 +147,9 @@ pnpm semwitness replay \
 
 The bundled replay runner checks deterministic, mechanical expectations such as selected codec, decision status, and reason codes. It does **not** measure task correctness or promote a policy by itself. The active host preparer therefore also requires a host-owned promotion manifest that binds external held-out task evaluation and usage evidence. Admission requires zero unsafe accepts, zero measured task-quality regressions, and at least 10% median **net** benefit after framing, cache effects, compressor/sidecar calls, output and reasoning cost, retries, recovery, and extra context. Any result remains scoped to the tested corpus, policy, tokenizer, host, model, and tool contract.
 
-The offline Promotion Evidence Workbench compiles that deployment evidence:
+The offline **compression-host** Promotion Evidence Workbench compiles that
+deployment evidence. It is intentionally separate from the shadow-only
+intent-cache qualification command documented later:
 
 ```bash
 pnpm semwitness promotion evaluate \
@@ -284,9 +287,12 @@ cancellation is required. See the
 
 ## Codex plugin
 
-The plugin packages the SemWitness skill and bundled local CLI, including the
-Promotion Evidence Workbench. It is an explicit workflow helper: it does not
-register a hidden prompt/response interceptor.
+The plugin packages the SemWitness skill and bundled local CLI, including two
+isolated workbenches: `promotion evaluate` for compression-host promotion and
+`intent promotion evaluate` for shadow-only intent-cache qualification. Their
+schemas, manifests, and activation ceilings are mutually invalid. The plugin is
+an explicit workflow helper: it does not register a hidden prompt/response
+interceptor.
 
 From a local source checkout, build first and add the repository as a marketplace:
 
@@ -458,6 +464,37 @@ requires every valid, unambiguous proposal to name the same operation; otherwise
 it bypasses. Agreement is still not proof of natural-language equivalence.
 See the [Normalizer Lab contract](docs/intent-witness/normalizer-lab.md).
 
+### Intent Cache Promotion Evidence Workbench
+
+`semwitness/intent/host` adds a separate, payload-free qualification boundary
+for a deployment-owned semantic cache experiment. It accepts only strict JSONL
+bytes and derives a content-free report for one bound `plan`/`read` operation.
+It does not accept a compression policy, emit a compression-host promotion, or
+authorize serving a cached plan:
+
+```bash
+pnpm semwitness intent promotion evaluate \
+  --evidence <strict-payload-free-jsonl> \
+  --manifest-out <new-private-shadow-qualification.json> \
+  --json
+```
+
+The evaluator binds the ontology, normalizer, operation registry, tenant scope,
+dependencies, sampling protocol, cost model, population clusters, and the full
+scenario × difficulty × cache-regime adversarial matrix. It separately reports
+exact-source and normalized-intent outcomes, safety bounds, useful coverage,
+net value, fail-closed overhead, truth-table failures, and missing phenomena.
+The file reader accepts only a regular non-symlink file up to 128 MiB, and the
+public evaluator strictly parses the bytes before deriving any result.
+
+Exit `0` means the evidence qualified and, when requested, a new private
+manifest was created. Exit `2` means well-formed evidence failed at least one
+gate and no manifest was created. Exit `1` covers malformed, I/O, no-clobber, or
+internal failure. The qualification remains `host-attested-unsigned` with an
+`activationCeiling` of `shadow-only`; it is evidence for a future host adapter,
+not cache authorization. See the [intent-cache workbench
+contract](docs/intent-witness/promotion-evidence-workbench.md).
+
 ## Roadmap
 
 1. Stabilize the v0.1 witness schema, deterministic codecs, adversarial tests, replay gate, and Codex shadow plugin.
@@ -476,6 +513,7 @@ See the [Normalizer Lab contract](docs/intent-witness/normalizer-lab.md).
 - [IntentWitness architecture and evidence boundary](docs/intent-witness/architecture.md)
 - [IntentWitness market and research landscape](docs/intent-witness/landscape.md)
 - [IntentWitness Normalizer Lab](docs/intent-witness/normalizer-lab.md)
+- [IntentWitness Promotion Evidence Workbench](docs/intent-witness/promotion-evidence-workbench.md)
 
 ## License
 
