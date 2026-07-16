@@ -1010,8 +1010,10 @@ describe('intent normalizer evaluation', () => {
 
   it('computes predeclared zero-failure bounds without sample-size theater', () => {
     expect(falseMergeUpperBound95Ppm(0, 0)).toBeNull();
-    expect(falseMergeUpperBound95Ppm(0, 2_995)).toBeLessThanOrEqual(1_000);
-    expect(falseMergeUpperBound95Ppm(0, 29_957)).toBeLessThanOrEqual(100);
-    expect(falseMergeUpperBound95Ppm(1, 29_957)).toBe(1_000_000);
+    expect(falseMergeUpperBound95Ppm(0, 2_994)).toBe(1_001);
+    expect(falseMergeUpperBound95Ppm(0, 2_995)).toBe(1_000);
+    expect(falseMergeUpperBound95Ppm(0, 29_955)).toBe(101);
+    expect(falseMergeUpperBound95Ppm(0, 29_956)).toBe(100);
+    expect(falseMergeUpperBound95Ppm(1, 29_956)).toBe(1_000_000);
   });
 });
