@@ -1,6 +1,7 @@
 import { toJsonValue } from '../domain/canonical-json.js';
 import { compareCodeUnits } from '../domain/deterministic-order.js';
 import { hashCanonical, sha256 } from '../domain/hash.js';
+import { zeroFailureUpperBound95Ppm } from '../eval/binomial.js';
 import { digestIntent, digestIntentSource } from './canonical.js';
 import { normalizeIntentShadow } from './compiler.js';
 import { assertParsedIntentEvaluationFixture } from './normalizer-schemas.js';
@@ -261,18 +262,7 @@ export function falseMergeUpperBound95Ppm(
   falseMerges: number,
   distinctTrials: number,
 ): number | null {
-  if (
-    !Number.isSafeInteger(falseMerges) ||
-    !Number.isSafeInteger(distinctTrials) ||
-    falseMerges < 0 ||
-    distinctTrials < 0 ||
-    falseMerges > distinctTrials
-  ) {
-    throw new TypeError('False-merge counts are invalid');
-  }
-  if (distinctTrials === 0) return null;
-  if (falseMerges > 0) return 1_000_000;
-  return Math.ceil((1 - Math.pow(0.05, 1 / distinctTrials)) * 1_000_000);
+  return zeroFailureUpperBound95Ppm(falseMerges, distinctTrials);
 }
 
 async function observe(
