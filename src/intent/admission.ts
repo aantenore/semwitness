@@ -7,6 +7,10 @@ import {
   verifyNormalizationWitnessIntegrity,
 } from './normalization.js';
 import {
+  isInternalCacheHitWitness,
+  isInternalNormalizationWitness,
+} from './parsed-witness-internal.js';
+import {
   parseCacheEntryDocument,
   parseCacheEntryPayloadDocument,
   parseCacheHitWitnessDocument,
@@ -74,16 +78,12 @@ export function createCacheEntry(input: CreateCacheEntryInput): CacheEntry {
 export function digestCacheEntryPayload(
   input: CreateCacheEntryInput | CacheEntry,
 ): Sha256Digest {
-  return sha256(
-    `${CACHE_ENTRY_DIGEST_PREFIX}${canonicalJson(
-      toJsonValue(
-        canonicalizeEntryPayload({
-          valueDigest: input.valueDigest,
-          binding: input.binding,
-          freshness: input.freshness,
-        }),
-      ),
-    )}`,
+  return digestParsedCacheEntryPayload(
+    canonicalizeEntryPayload({
+      valueDigest: input.valueDigest,
+      binding: input.binding,
+      freshness: input.freshness,
+    }),
   );
 }
 
@@ -143,8 +143,7 @@ export function recomputeCacheHitWitnessDigest(
   witness: CacheHitWitness,
 ): Sha256Digest {
   const parsed = parseCacheHitWitnessDocument(witness);
-  const { witnessDigest: _witnessDigest, ...unsigned } = parsed;
-  return hashCanonical(toJsonValue(unsigned));
+  return digestParsedCacheHitWitness(parsed);
 }
 
 export function verifyCacheHitWitness(
@@ -153,12 +152,14 @@ export function verifyCacheHitWitness(
 ): CacheHitVerification {
   let witness: CacheHitWitness;
   try {
-    witness = parseCacheHitWitnessDocument(input);
+    witness = isInternalCacheHitWitness(input)
+      ? input
+      : parseCacheHitWitnessDocument(input);
   } catch {
     return { verified: false, reasons: ['INTENT_MALFORMED'] };
   }
   const reasons: IntentReasonCode[] = [];
-  if (recomputeCacheHitWitnessDigest(witness) !== witness.witnessDigest) {
+  if (digestParsedCacheHitWitness(witness) !== witness.witnessDigest) {
     reasons.push('CACHE_WITNESS_TAMPERED');
   }
 
@@ -237,25 +238,49 @@ export function verifyCacheHitWitnessIntegrity(
 ): CacheHitVerification {
   let witness: CacheHitWitness;
   try {
-    witness = parseCacheHitWitnessDocument(input);
+    witness = isInternalCacheHitWitness(input)
+      ? input
+      : parseCacheHitWitnessDocument(input);
   } catch {
     return { verified: false, reasons: ['INTENT_MALFORMED'] };
   }
-
-  const reasons: IntentReasonCode[] = [];
-  if (recomputeCacheHitWitnessDigest(witness) !== witness.witnessDigest) {
-    reasons.push('CACHE_WITNESS_TAMPERED');
-  }
+  const witnessDigestMatches =
+    digestParsedCacheHitWitness(witness) === witness.witnessDigest;
 
   let normalization: NormalizationWitness;
   try {
-    normalization = parseNormalizationWitnessDocument(normalizationInput);
+    normalization = isInternalNormalizationWitness(normalizationInput)
+      ? normalizationInput
+      : parseNormalizationWitnessDocument(normalizationInput);
   } catch {
-    reasons.push('INTENT_MALFORMED', 'CACHE_NORMALIZATION_WITNESS_INVALID');
     return {
       verified: false,
-      reasons: [...new Set(reasons)],
+      reasons: [
+        ...(witnessDigestMatches ? [] : (['CACHE_WITNESS_TAMPERED'] as const)),
+        'INTENT_MALFORMED',
+        'CACHE_NORMALIZATION_WITNESS_INVALID',
+      ],
     };
+  }
+  return verifyParsedCacheHitWitnessIntegrity(
+    witness,
+    normalization,
+    witnessDigestMatches,
+  );
+}
+
+/**
+ * Internal fast path for snapshots already accepted by the strict schemas.
+ * It is intentionally omitted from the public intent entrypoint.
+ */
+function verifyParsedCacheHitWitnessIntegrity(
+  witness: CacheHitWitness,
+  normalization: NormalizationWitness,
+  witnessDigestMatches: boolean,
+): CacheHitVerification {
+  const reasons: IntentReasonCode[] = [];
+  if (!witnessDigestMatches) {
+    reasons.push('CACHE_WITNESS_TAMPERED');
   }
   const normalizationVerification =
     verifyNormalizationWitnessIntegrity(normalization);
@@ -278,6 +303,12 @@ export function verifyCacheHitWitnessIntegrity(
   }
 
   return { verified: reasons.length === 0, reasons: [...new Set(reasons)] };
+}
+
+/** Internal digest path for an already strict-schema-parsed cache witness. */
+function digestParsedCacheHitWitness(witness: CacheHitWitness): Sha256Digest {
+  const { witnessDigest: _witnessDigest, ...unsigned } = witness;
+  return hashCanonical(toJsonValue(unsigned));
 }
 
 function cacheWitnessMatchesNormalization(
@@ -317,7 +348,7 @@ function evaluateAdmission(
   ) {
     reasons.push('CACHE_INTENT_MISMATCH');
   }
-  if (digestCacheEntryPayload(entry) !== entry.entryDigest) {
+  if (digestParsedCacheEntryPayload(entry) !== entry.entryDigest) {
     reasons.push('CACHE_ENTRY_DIGEST_MISMATCH');
   }
   if (
@@ -617,6 +648,12 @@ function canonicalizeEntryPayload(
   input: CreateCacheEntryInput,
 ): CreateCacheEntryInput {
   const validated = parseCacheEntryPayloadDocument(input);
+  return canonicalizeParsedEntryPayload(validated);
+}
+
+function canonicalizeParsedEntryPayload(
+  validated: CreateCacheEntryInput,
+): CreateCacheEntryInput {
   return validated.freshness.kind === 'revision-set'
     ? {
         valueDigest: validated.valueDigest,
@@ -631,6 +668,19 @@ function canonicalizeEntryPayload(
         binding: validated.binding,
         freshness: validated.freshness,
       };
+}
+
+function digestParsedCacheEntryPayload(
+  input: CreateCacheEntryInput | CacheEntry,
+): Sha256Digest {
+  const canonical = canonicalizeParsedEntryPayload({
+    valueDigest: input.valueDigest,
+    binding: input.binding,
+    freshness: input.freshness,
+  });
+  return sha256(
+    `${CACHE_ENTRY_DIGEST_PREFIX}${canonicalJson(toJsonValue(canonical))}`,
+  );
 }
 
 function canonicalizeLookup(lookup: CacheLookup): CacheLookup {

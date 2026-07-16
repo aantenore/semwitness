@@ -17,6 +17,7 @@ import {
   parseCacheHitWitness,
   parseIntentIR,
   parseNormalizationWitness,
+  recomputeNormalizationWitnessDigest,
   verifyCacheHitWitness,
   verifyCacheHitWitnessIntegrity,
   verifyNormalizationWitness,
@@ -541,6 +542,41 @@ describe('normalization witness admission', () => {
         minimumConfidencePpm: witness.assessment.minimumConfidencePpm,
       } as unknown as Parameters<typeof verifyNormalizationWitness>[1]),
     ).toEqual({ verified: false, reasons: ['INTENT_MALFORMED'] });
+  });
+
+  it('preserves verification reason order for a resealed inconsistent decision', () => {
+    const witness = normalization();
+    const inconsistent = {
+      ...witness,
+      decision: {
+        verdict: 'bypass' as const,
+        applied: false as const,
+        reasons: ['INTENT_AMBIGUOUS' as const],
+      },
+      witnessDigest: sha256('placeholder'),
+    };
+    inconsistent.witnessDigest =
+      recomputeNormalizationWitnessDigest(inconsistent);
+
+    expect(
+      verifyNormalizationWitness(inconsistent, {
+        sourceDigest: witness.sourceDigest,
+        intent: intent(),
+        normalizer: {
+          ...witness.normalizer,
+          artifactDigest: sha256('normalizer-upgrade'),
+        },
+        policyDigest: sha256('normalization-policy-upgrade'),
+        minimumConfidencePpm: witness.assessment.minimumConfidencePpm,
+      }),
+    ).toEqual({
+      verified: false,
+      reasons: [
+        'INTENT_NORMALIZER_MISMATCH',
+        'INTENT_POLICY_MISMATCH',
+        'INTENT_WITNESS_TAMPERED',
+      ],
+    });
   });
 
   it('validates bounded factory inputs before sorting or hashing them', () => {
