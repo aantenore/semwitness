@@ -1,12 +1,13 @@
 # SemWitness
 
 **Outcome:** SemWitness evaluates candidate context transformations, proves their
-mechanical safety properties, and reports net token effects **without replacing
-the content sent to an LLM**. The current release also keeps IntentWitness—a
-bounded, typed intent-normalization and cache-admission lab—inside the same
-repository. Neither path serves cached values. The historical v0.1 CLI and
-Codex plugin remain local, shadow-only Compression CI: they retain the original
-as the runtime result and emit deterministic evidence for review and replay.
+mechanical safety properties, and reports net token effects. Shadow/identity is
+the default. The v0.5 alpha adds an opt-in, promotion-gated host boundary that
+can place verified canonical JSON into explicitly selected AI SDK tool results;
+the CLI and Codex plugin remain local, explicit, shadow-only Compression CI.
+The repository also contains IntentWitness, a bounded, typed
+intent-normalization and cache-admission lab. IntentWitness never serves cached
+values.
 
 > Proof-carrying does not mean “the meaning is mathematically proved.” A SemWitness bundle proves checkable facts such as hashes, byte-exact protected segments, reversible decoding, typed-JSON equivalence, policy/codec identity, anchors, and token accounting. Natural-language semantic equivalence is not claimed.
 
@@ -27,7 +28,7 @@ Its historical v0.1 compression workflow is:
 5. verify round-trip, anchors, hashes, limits, and typed invariants;
 6. count codec/legend overhead and apply a configurable net-win threshold;
 7. emit a canonical proof bundle or a structured bypass decision;
-8. return the original in shadow mode and produce mechanical replay evidence for a separate host-level admission gate.
+8. return the original in shadow mode and produce mechanical replay evidence for an explicit host-level admission gate.
 
 The result is **Compression CI**: compression policy can be tested like code before any host is allowed to use transformed content.
 
@@ -46,6 +47,9 @@ flowchart LR
     I --> G
     G --> J["Replay / stats / review"]
     A --> K["Original retained by v0.1 CLI/plugin"]
+    G --> L["Promotion-gated host preparer"]
+    L --> M["AI SDK v4 middleware"]
+    M -->|"selected JSON tool results only"| N["Wrapped model"]
 ```
 
 The implementation is a modular monolith:
@@ -139,7 +143,110 @@ pnpm semwitness replay \
   --json
 ```
 
-The bundled replay runner checks deterministic, mechanical expectations such as selected codec, decision status, and reason codes. It does **not** measure task correctness or promote a policy by itself. A future active adapter must combine this report with an external held-out task evaluation and provider usage data; the proposed admission target is no task-quality regression and at least 10% median **net** token savings after framing, retries, recovery, cache effects, and extra context. Any result remains scoped to the tested corpus, policy, tokenizer, host, and model.
+The bundled replay runner checks deterministic, mechanical expectations such as selected codec, decision status, and reason codes. It does **not** measure task correctness or promote a policy by itself. The active host preparer therefore also requires a host-owned promotion manifest that binds external held-out task evaluation and usage evidence. Admission requires zero unsafe accepts, zero measured task-quality regressions, and at least 10% median **net** input-token savings after framing, retries, recovery, cache effects, and extra context. Any result remains scoped to the tested corpus, policy, tokenizer, host, model, and tool contract.
+
+## Verified request preparation (v0.5 alpha)
+
+`semwitness/host` is a provider-neutral boundary over the existing policy,
+codec, proof, tokenizer, and CAS contracts. `semwitness/ai-sdk` is a thin AI SDK
+v4 middleware adapter. Neither module owns provider calls, credentials,
+routing, retries, or model selection.
+
+```ts
+import { wrapLanguageModel } from 'ai';
+import { createSemWitness, sha256 } from 'semwitness';
+import {
+  createVerifiedTextRequestPreparer,
+  parseHostPromotionManifest,
+} from 'semwitness/host';
+import {
+  createSemWitnessLanguageModelMiddleware,
+  digestAiSdkDeploymentScope,
+  type AiSdkDeploymentScope,
+  type AiSdkMiddlewareLimits,
+  type ToolResultSelector,
+} from 'semwitness/ai-sdk';
+
+// Host-owned inputs: an apply-verified policy, the exact tokenizer used in the
+// bound evaluation, its reviewed promotion artifact, and an AI SDK v4 model.
+const core = createSemWitness({
+  storeRoot: '.semwitness',
+  policy: applyPolicy,
+  tokenizer: exactTokenizer,
+});
+
+const selectors = [
+  {
+    toolNames: ['search_catalog', 'lookup_inventory'],
+    trust: 'workspace-trusted',
+  },
+] as const satisfies readonly ToolResultSelector[];
+const scope = {
+  provider: baseModel.provider,
+  modelId: baseModel.modelId,
+  // These hash reviewed, deployment-owned prompt and tool contracts—not
+  // arbitrary labels. Rotate them whenever either deployed contract changes.
+  promptContractDigest: sha256(reviewedPromptContractBytes),
+  toolContractDigest: sha256(reviewedToolContractBytes),
+} satisfies AiSdkDeploymentScope;
+const deploymentScopeDigest = digestAiSdkDeploymentScope(scope, selectors);
+const limits = {
+  maxMessagesPerCall: 64,
+  maxToolPartsPerCall: 256,
+  maxCandidatesPerCall: 32,
+  preparationTimeoutMs: 1_000,
+} satisfies AiSdkMiddlewareLimits;
+
+// promotionJson must carry this exact deploymentScopeDigest. It is normally
+// generated by the held-out evaluation/promotion pipeline, not at runtime.
+const promotion = parseHostPromotionManifest(promotionJson);
+if (promotion.deploymentScopeDigest !== deploymentScopeDigest) {
+  throw new Error('SemWitness promotion does not match this deployment');
+}
+const preparer = createVerifiedTextRequestPreparer(
+  core,
+  applyPolicy,
+  promotion,
+);
+
+const model = wrapLanguageModel({
+  model: baseModel,
+  middleware: createSemWitnessLanguageModelMiddleware({
+    preparer,
+    scope,
+    limits,
+    selectors,
+  }),
+});
+```
+
+The adapter considers only text outputs in `tool`-role `tool-result` parts whose
+tool name is exactly allowlisted. It preserves system/user/assistant messages,
+tool calls, JSON-valued outputs, errors, files, multimodal content, provider
+options, and every unselected part. Within this alpha, active delivery is
+limited to `json-jcs@1`, `application/json` (including `+json`), and
+`typed-semantic` equivalence. Decoder-dependent RLE candidates remain shadow
+evidence and are never sent without an explicit framing protocol.
+
+There is intentionally no bundled promotion manifest. A deployment must supply
+one produced from its own held-out corpus and bind the exact policy, tokenizer
+fingerprint, codec versions, corpus digest, evaluation-report digest, provider,
+model, reviewed prompt/tool contracts, and normalized selector/trust map. The
+adapter checks the live model provider and model ID; the deployment remains
+responsible for deriving and rotating the two contract digests from the exact
+reviewed artifacts it deploys.
+
+Missing/stale evidence, malformed JSON, lossy JavaScript-to-UTF-8 input,
+verification, or storage failure never authorize a rewrite. Observer output
+and observer failure are never authorization inputs and cannot change the
+preparation decision. Limits are mandatory and strict: messages, cumulative
+tool parts, selected candidates, and the complete preparation window are
+bounded. Overflow, timeout, or any candidate failure forwards the exact original
+call options and emits no partial decision events. A non-cooperative preparer
+may finish local work later, so use worker/process isolation when hard
+cancellation is required. See the
+[v0.5 delivery contract](docs/delivery-contract-v0.5.md) and [ADR
+0001](docs/adr/0001-embedded-verified-request-preparer.md).
 
 ## Codex plugin
 
@@ -157,7 +264,7 @@ After the public repository is published with its committed plugin bundle, use
 the versioned release ref for a reproducible installation:
 
 ```bash
-codex plugin marketplace add aantenore/semwitness --ref v0.4.0-alpha.1
+codex plugin marketplace add aantenore/semwitness --ref v0.5.0-alpha.1
 codex plugin add semwitness@semwitness-local --json
 ```
 
@@ -180,9 +287,17 @@ Installation snapshots the plugin directory. Rebuild and reinstall after local s
   savings require an SDK, App Server wrapper, or gateway that deliberately
   applies an admitted candidate before the request.
 - **Shadow mode does not itself lower a production bill.** The historical v0.1
-  compression commands remain local. The optional OpenAI-compatible intent
-  evaluator does make provider requests only after explicit network opt-in, but
-  it still neither changes the active prompt nor serves cached work.
+  compression commands remain local. Only a deliberately installed active host
+  adapter with valid promotion evidence can change selected request content.
+  The optional OpenAI-compatible intent evaluator makes provider requests only
+  after explicit network opt-in, but it neither changes the active prompt nor
+  serves cached work.
+- **Promotion is deployment evidence, not producer authentication.** The v0.5
+  alpha binds its host-owned manifest to the AI SDK artifact, live
+  provider/model identity, reviewed prompt/tool contract digests, and exact
+  selector/trust map, but does not sign it. The host must derive those contract
+  digests honestly and protect the artifact through the deployment supply
+  chain; signatures and workload identity remain future work.
 - **Remote intent evaluation discloses source text.** When the optional
   OpenAI-compatible compiler is selected, each chosen fixture source is sent to
   the configured provider. Use only an approved endpoint and data set; secrets
@@ -309,7 +424,7 @@ See the [Normalizer Lab contract](docs/intent-witness/normalizer-lab.md).
 
 1. Stabilize the v0.1 witness schema, deterministic codecs, adversarial tests, replay gate, and Codex shadow plugin.
 2. Add pluggable tokenizer and codec adapters, including optional neural codecs evaluated behind the same proof and fallback contract.
-3. Build an opt-in Codex App Server or SDK adapter that can apply an admitted candidate at the application boundary before a model call. This will be a separate, visible integration—not a claim that the plugin can intercept traffic.
+3. Operationalize the AI SDK adapter with deployment-owned promotion tooling and provider usage evidence, then add an explicit Codex App Server integration before `turn/start`; the plugin itself will remain shadow-only.
 4. Add a Claude adapter using the host surfaces Claude actually exposes while preserving identical policy, witness, and replay semantics.
 5. Explore signed/HMAC witnesses, privacy-preserving digest modes, policy attestations, and organization-level Compression CI.
 6. Extend Normalizer Lab with independently sampled domain corpora, entity and temporal resolvers, and additional provider adapters; compare exact-hash, consensus, RedisVL/semantic-router, and vCache-style approaches before considering active reuse.
