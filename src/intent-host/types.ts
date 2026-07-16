@@ -1,8 +1,10 @@
 import type { Sha256Digest } from '../domain/types.js';
 import type {
+  CacheHitWitness,
   CacheKeyDigest,
   HmacIntentSourceDigest,
   IntentEffect,
+  NormalizationWitness,
   NormalizerBinding,
   OntologyBinding,
 } from '../intent/types.js';
@@ -21,6 +23,8 @@ export const INTENT_CACHE_LOOKUP_RECEIPT_SCHEMA =
   'semwitness.dev/intent-cache-lookup-receipt/v1alpha1' as const;
 export const INTENT_NORMALIZATION_BYPASS_RECEIPT_SCHEMA =
   'semwitness.dev/intent-normalization-bypass-receipt/v1alpha1' as const;
+export const INTENT_CACHE_ENTRY_SOURCE_BINDING_SCHEMA =
+  'semwitness.dev/intent-cache-entry-source-binding/v1alpha1' as const;
 
 /** The v1alpha1 qualification schema deliberately accepts only plan evidence. */
 export const INTENT_CACHE_PROMOTION_TIERS = ['plan'] as const;
@@ -416,4 +420,431 @@ export interface IntentCacheShadowQualificationManifest {
     readonly accountingContractDigest: Sha256Digest;
     readonly reportDigest: Sha256Digest;
   };
+}
+
+/** Globally ordered execution order for one ordinary/candidate pair. */
+export const INTENT_CACHE_PROMOTION_PAIR_ORDERS = [
+  'ordinary-first',
+  'candidate-first',
+] as const;
+export type IntentCachePromotionPairOrder =
+  (typeof INTENT_CACHE_PROMOTION_PAIR_ORDERS)[number];
+
+/** Bounded, payload-free adversarial phenomenon vocabulary. */
+export const INTENT_CACHE_PROMOTION_PHENOMENA = [
+  'coreference',
+  'entity',
+  'invalidation-drift',
+  'locale',
+  'model-drift',
+  'negation',
+  'number',
+  'output-contract',
+  'policy-drift',
+  'prompt-injection',
+  'quantifier',
+  'resolver-drift',
+  'time',
+  'tool-drift',
+  'unicode',
+  'unit',
+] as const;
+export type IntentCachePromotionPhenomenon =
+  (typeof INTENT_CACHE_PROMOTION_PHENOMENA)[number];
+
+export const INTENT_CACHE_PROMOTION_FAILURE_STAGES = [
+  'ordinary',
+  'normalization',
+  'operation-binding',
+  'candidate-index',
+  'store',
+  'lookup',
+  'verification',
+  'fallback',
+  'oracle',
+  'accounting',
+] as const;
+export type IntentCachePromotionFailureStage =
+  (typeof INTENT_CACHE_PROMOTION_FAILURE_STAGES)[number];
+
+export const INTENT_CACHE_PROMOTION_FAILURE_REASONS = [
+  'ORDINARY_EXECUTION_FAILED',
+  'CANDIDATE_EXECUTION_FAILED',
+  'ACCOUNTING_INCOMPLETE',
+  'ORACLE_FAILED',
+  'TIMEOUT',
+  'ABORTED',
+  'DEPENDENCY_UNAVAILABLE',
+  'BOUNDED_EXECUTION_FAILURE',
+] as const;
+export type IntentCachePromotionFailureReason =
+  (typeof INTENT_CACHE_PROMOTION_FAILURE_REASONS)[number];
+
+export interface IntentCachePromotionEvidenceBinding {
+  readonly schema: typeof INTENT_CACHE_PROMOTION_EVIDENCE_SCHEMA;
+  readonly kind: 'binding';
+  readonly artifact: {
+    readonly id: 'semwitness-intent-cache-promotion-evidence';
+    readonly version: '1';
+  };
+  readonly provenance: 'host-attested-unsigned';
+  readonly evidenceAuthentication: 'none';
+  readonly activationCeiling: 'shadow-only';
+  readonly mode: 'shadow';
+  readonly tier: 'plan';
+  readonly qualifiedOperation: {
+    readonly operation: IntentCacheOperationHmac;
+    readonly domain: IntentCacheDomainHmac;
+    readonly effect: 'read';
+  };
+  readonly scope: {
+    readonly cacheNamespace: IntentCacheNamespaceHmac;
+    readonly tenant: IntentCacheTenantHmac;
+    readonly deploymentScopeDigest: Sha256Digest;
+  };
+  readonly validity: {
+    readonly notBeforeEpochMs: number;
+    readonly notAfterEpochMs: number;
+    readonly revocationId: IntentCacheRevocationHmac;
+  };
+  readonly intentContract: {
+    readonly intentIrSchema: 'semwitness.dev/intent-ir/v1alpha1';
+    readonly ontology: OntologyBinding;
+    readonly normalizer: NormalizerBinding;
+    readonly operationRegistry: IntentCacheBoundArtifact;
+    readonly resolver: IntentCacheBoundArtifact;
+    readonly normalizationPolicyDigest: Sha256Digest;
+    readonly cacheAdmissionPolicyDigest: Sha256Digest;
+    readonly sourceHmacKeyVersionDigest: Sha256Digest;
+  };
+  readonly dependencies: IntentCacheDependencyInventory;
+  readonly population: {
+    readonly populationFrameDigest: Sha256Digest;
+    readonly corpusDigest: Sha256Digest;
+    readonly sourceLogRootDigest: Sha256Digest;
+    readonly samplingProtocolDigest: Sha256Digest;
+    readonly inclusionPolicyDigest: Sha256Digest;
+    readonly samplingWindowDigest: Sha256Digest;
+    readonly independenceUnit: 'cluster';
+    readonly attempted: number;
+    readonly emitted: number;
+    readonly dropped: 0;
+    readonly complete: number;
+    readonly failed: number;
+  };
+  readonly adversarial: {
+    readonly corpusDigest: Sha256Digest;
+    readonly coverageDigest: Sha256Digest;
+    readonly expected: number;
+    readonly emitted: number;
+    readonly complete: number;
+    readonly failed: number;
+  };
+  readonly evaluation: {
+    readonly split: 'held-out';
+    readonly evaluationProtocolDigest: Sha256Digest;
+    readonly evaluatorDigest: Sha256Digest;
+    readonly oracleDigest: Sha256Digest;
+    readonly accountingContractDigest: Sha256Digest;
+    readonly costModel: IntentCacheBoundArtifact;
+    readonly currencyUnitDigest: Sha256Digest;
+  };
+  readonly bindingDigest: Sha256Digest;
+}
+
+interface IntentCachePromotionNumericUsageCounters {
+  readonly physicalInputTokens: number;
+  readonly providerPrefixCacheReadInputTokens: number;
+  readonly providerPrefixCacheWriteInputTokens: number;
+  readonly applicationSemanticCacheLookups: number;
+  readonly applicationSemanticCacheReads: number;
+  readonly applicationSemanticCacheWrites: number;
+  readonly applicationSemanticCacheInvalidations: number;
+  readonly outputTokens: number;
+  readonly reasoningTokens: number;
+  readonly normalizedCostUnits: number;
+  readonly allocatedInvalidationCostUnits: number;
+  readonly endToEndLatencyMicros: number;
+  readonly normalizerLatencyMicros: number;
+  readonly candidateIndexLatencyMicros: number;
+  readonly storeLatencyMicros: number;
+  readonly lookupLatencyMicros: number;
+  readonly verifierLatencyMicros: number;
+  readonly fallbackLatencyMicros: number;
+  readonly toolCalls: number;
+  readonly attempts: number;
+  readonly retries: number;
+  readonly recoveries: number;
+}
+
+interface IntentCachePromotionNullableUsageCounters {
+  readonly physicalInputTokens: number | null;
+  readonly providerPrefixCacheReadInputTokens: number | null;
+  readonly providerPrefixCacheWriteInputTokens: number | null;
+  readonly applicationSemanticCacheLookups: number | null;
+  readonly applicationSemanticCacheReads: number | null;
+  readonly applicationSemanticCacheWrites: number | null;
+  readonly applicationSemanticCacheInvalidations: number | null;
+  readonly outputTokens: number | null;
+  readonly reasoningTokens: number | null;
+  readonly normalizedCostUnits: number | null;
+  readonly allocatedInvalidationCostUnits: number | null;
+  readonly endToEndLatencyMicros: number | null;
+  readonly normalizerLatencyMicros: number | null;
+  readonly candidateIndexLatencyMicros: number | null;
+  readonly storeLatencyMicros: number | null;
+  readonly lookupLatencyMicros: number | null;
+  readonly verifierLatencyMicros: number | null;
+  readonly fallbackLatencyMicros: number | null;
+  readonly toolCalls: number | null;
+  readonly attempts: number | null;
+  readonly retries: number | null;
+  readonly recoveries: number | null;
+}
+
+export type IntentCachePromotionUsageObservation =
+  | ({
+      readonly completeness: 'complete';
+      /** Digest of a random, high-entropy trace identifier. */
+      readonly traceDigest: Sha256Digest;
+    } & IntentCachePromotionNumericUsageCounters)
+  | ({
+      readonly completeness: 'incomplete';
+      readonly failureDigest: Sha256Digest;
+      /** Digest of a random, high-entropy trace identifier. */
+      readonly traceDigest: Sha256Digest;
+    } & IntentCachePromotionNullableUsageCounters);
+
+export type IntentCachePromotionCompleteUsageObservation = Extract<
+  IntentCachePromotionUsageObservation,
+  { readonly completeness: 'complete' }
+>;
+export type IntentCachePromotionIncompleteUsageObservation = Extract<
+  IntentCachePromotionUsageObservation,
+  { readonly completeness: 'incomplete' }
+>;
+
+interface IntentCachePromotionUsagePairBase {
+  readonly costModelDigest: Sha256Digest;
+  readonly currencyUnitDigest: Sha256Digest;
+}
+
+export type IntentCachePromotionUsagePair =
+  | (IntentCachePromotionUsagePairBase & {
+      readonly accounting: { readonly completeness: 'complete' };
+      readonly ordinary: IntentCachePromotionCompleteUsageObservation;
+      readonly candidate: IntentCachePromotionCompleteUsageObservation;
+    })
+  | (IntentCachePromotionUsagePairBase & {
+      readonly accounting: {
+        readonly completeness: 'incomplete';
+        readonly failureDigest: Sha256Digest;
+      };
+      readonly ordinary: IntentCachePromotionIncompleteUsageObservation;
+      readonly candidate: IntentCachePromotionUsageObservation;
+    })
+  | (IntentCachePromotionUsagePairBase & {
+      readonly accounting: {
+        readonly completeness: 'incomplete';
+        readonly failureDigest: Sha256Digest;
+      };
+      readonly ordinary: IntentCachePromotionCompleteUsageObservation;
+      readonly candidate: IntentCachePromotionIncompleteUsageObservation;
+    });
+
+export interface IntentCacheEntrySourceBinding {
+  readonly schema: typeof INTENT_CACHE_ENTRY_SOURCE_BINDING_SCHEMA;
+  readonly entryDigest: Sha256Digest;
+  readonly valueDigest: Sha256Digest;
+  readonly entrySourceHmac: HmacIntentSourceDigest;
+  readonly bindingDigest: Sha256Digest;
+}
+
+export type IntentCachePromotionStoreFault =
+  | {
+      readonly kind: 'not-injected';
+    }
+  | {
+      readonly kind: 'injected';
+      readonly evidenceDigest: Sha256Digest;
+      readonly expectedFaultObserved: boolean;
+      readonly ordinaryPathSucceeded: boolean;
+      readonly candidateFallbackSucceeded: boolean;
+      readonly unexpectedExecutionFailure: boolean;
+    };
+
+interface IntentCachePermissionOracleFacts {
+  readonly artifactRelation: IntentCacheArtifactRelation;
+  readonly scope: IntentCacheScopeOracleState;
+  readonly authorization: IntentCacheAuthorizationOracleState;
+  readonly freshness: IntentCacheFreshnessOracleState;
+  readonly effectTier: IntentCacheEffectTierOracleState;
+  readonly policy: IntentCachePolicyOracleState;
+}
+
+export interface IntentCacheCandidateOracle extends IntentCachePermissionOracleFacts {
+  readonly kind: 'candidate';
+  readonly ordinaryArtifactDigest: Sha256Digest;
+  readonly observedCandidateArtifactDigest: Sha256Digest;
+  readonly qualityEvidenceDigest: Sha256Digest;
+  readonly taskQuality: IntentCacheTaskQualityOracleState;
+}
+
+export type IntentCacheNoCandidateReference =
+  | {
+      readonly kind: 'none';
+    }
+  | {
+      readonly kind: 'attested';
+      readonly artifactDigest: Sha256Digest;
+      readonly cacheKeyDigest: CacheKeyDigest;
+      readonly entrySourceBinding: IntentCacheEntrySourceBinding;
+      readonly operationBinding: IntentCacheOperationBinding;
+    };
+
+export type IntentCacheNoCandidateOracle =
+  | (Omit<IntentCachePermissionOracleFacts, 'artifactRelation'> & {
+      readonly kind: 'no-candidate';
+      readonly ordinaryArtifactDigest: Sha256Digest;
+      readonly artifactRelation: 'not-comparable';
+      readonly taskQuality: 'not-evaluated';
+      readonly reference: { readonly kind: 'none' };
+    })
+  | (IntentCachePermissionOracleFacts & {
+      readonly kind: 'no-candidate';
+      readonly ordinaryArtifactDigest: Sha256Digest;
+      readonly taskQuality: 'not-evaluated';
+      readonly reference: Extract<
+        IntentCacheNoCandidateReference,
+        { readonly kind: 'attested' }
+      >;
+    });
+
+export type IntentCacheOracleOperation =
+  | { readonly kind: 'none' }
+  | {
+      readonly kind: 'attested';
+      readonly binding: IntentCacheOperationBinding;
+    };
+
+export interface IntentCacheNormalizationBypassOracle {
+  readonly kind: 'normalization-bypass';
+  readonly ordinaryArtifactDigest: Sha256Digest;
+  readonly artifactRelation: 'not-comparable';
+  readonly oracleOperation: IntentCacheOracleOperation;
+}
+
+export interface IntentCacheCandidateBearingPath {
+  readonly kind: 'candidate-bearing';
+  readonly normalizationWitness: NormalizationWitness;
+  readonly operationBinding: IntentCacheOperationBinding;
+  readonly entrySourceBinding: IntentCacheEntrySourceBinding;
+  readonly cacheHitWitness: CacheHitWitness;
+  readonly oracle: IntentCacheCandidateOracle;
+}
+
+export interface IntentCacheNormalizedNoCandidatePath {
+  readonly kind: 'normalized-no-candidate';
+  readonly normalizationWitness: NormalizationWitness;
+  readonly lookupReceipt: IntentCacheLookupReceipt;
+  readonly oracle: IntentCacheNoCandidateOracle;
+}
+
+export interface IntentCacheNormalizationBypassPath {
+  readonly kind: 'normalization-bypass';
+  readonly receipt: IntentNormalizationBypassReceipt;
+  readonly lookup: 'not-attempted';
+  readonly oracle: IntentCacheNormalizationBypassOracle;
+}
+
+export type IntentCachePromotionCompletePath =
+  | IntentCacheCandidateBearingPath
+  | IntentCacheNormalizedNoCandidatePath
+  | IntentCacheNormalizationBypassPath;
+
+export type IntentCachePromotionAttemptedOperation =
+  | {
+      readonly status: 'unavailable';
+    }
+  | {
+      readonly status: 'observed';
+      readonly binding: IntentCacheOperationBinding;
+    };
+
+export interface IntentCachePromotionFailure {
+  readonly stage: IntentCachePromotionFailureStage;
+  readonly reason: IntentCachePromotionFailureReason;
+  readonly evidenceDigest: Sha256Digest;
+}
+
+interface IntentCachePromotionCaseBase {
+  readonly schema: typeof INTENT_CACHE_PROMOTION_EVIDENCE_SCHEMA;
+  readonly ordinal: number;
+  readonly difficulty: IntentCachePromotionDifficulty;
+  readonly cacheRegime: IntentCachePromotionCacheRegime;
+  readonly pairOrder: IntentCachePromotionPairOrder;
+  readonly stateSnapshotDigest: Sha256Digest;
+  readonly usage: IntentCachePromotionUsagePair;
+  readonly caseDigest: Sha256Digest;
+}
+
+interface IntentCachePromotionCompleteCaseBase extends IntentCachePromotionCaseBase {
+  readonly storeFault: IntentCachePromotionStoreFault;
+  readonly path: IntentCachePromotionCompletePath;
+}
+
+interface IntentCachePromotionFailedCaseBase extends IntentCachePromotionCaseBase {
+  readonly attemptedOperation: IntentCachePromotionAttemptedOperation;
+  readonly failure: IntentCachePromotionFailure;
+}
+
+export interface IntentCachePopulationCompleteCase extends IntentCachePromotionCompleteCaseBase {
+  readonly kind: 'population-complete';
+  readonly clusterHmac: IntentCacheClusterHmac;
+}
+
+export interface IntentCachePopulationFailureCase extends IntentCachePromotionFailedCaseBase {
+  readonly kind: 'population-failure';
+  readonly clusterHmac: IntentCacheClusterHmac;
+}
+
+interface IntentCacheAdversarialCommonLabels {
+  readonly phenomena: readonly IntentCachePromotionPhenomenon[];
+}
+
+export type IntentCacheAdversarialCaseLabels =
+  | (IntentCacheAdversarialCommonLabels & {
+      readonly primaryScenario: Exclude<
+        IntentCacheRequiredAdversarialScenario,
+        'side-effect'
+      >;
+    })
+  | (IntentCacheAdversarialCommonLabels & {
+      readonly primaryScenario: 'side-effect';
+      /** Conformance-only: never part of qualification or value denominators. */
+      readonly probeOperation: IntentCacheOperationBinding;
+    });
+
+export type IntentCacheAdversarialCompleteCase =
+  IntentCachePromotionCompleteCaseBase &
+    IntentCacheAdversarialCaseLabels & {
+      readonly kind: 'adversarial-complete';
+    };
+
+export type IntentCacheAdversarialFailureCase =
+  IntentCachePromotionFailedCaseBase &
+    IntentCacheAdversarialCaseLabels & {
+      readonly kind: 'adversarial-failure';
+    };
+
+export type IntentCachePopulationEvidenceCase =
+  IntentCachePopulationCompleteCase | IntentCachePopulationFailureCase;
+export type IntentCacheAdversarialEvidenceCase =
+  IntentCacheAdversarialCompleteCase | IntentCacheAdversarialFailureCase;
+export type IntentCachePromotionEvidenceCase =
+  IntentCachePopulationEvidenceCase | IntentCacheAdversarialEvidenceCase;
+
+export interface IntentCachePromotionEvidenceFixture {
+  readonly binding: IntentCachePromotionEvidenceBinding;
+  readonly cases: readonly IntentCachePromotionEvidenceCase[];
 }
