@@ -41,9 +41,23 @@ ignore bounded data-only extensions monotonically, while the content-free
 binding inspector records `extensionsPresent` and returns `bound: false` for
 any extended payload. `canonicalProfileDigest` identifies only the normalized
 supported profile; `payloadDigest` identifies exact supplied bytes and is the
-only suitable digest for a future signed-payload or admission-receipt
-commitment. Authentication, trusted approval, clock and revocation enforcement,
-per-entry receipts, and live serving remain later and separate boundaries.
+only suitable digest for a signed-payload or transparency commitment.
+
+The Cache Admission Decision Statement is the next, separate lineage layer. It
+binds the exact Passport payload and exact eligible `CacheHitWitness` payload as
+two joint in-toto subjects, then derives scope, contract, operation, entry, and
+value commitments from separately verified evidence. Public entry/value hashes
+are replaced by domain-separated deployment-keyed commitments. Exact-byte
+inspection requires the same private candidate value and HMAC secret, but
+neither enters the Statement or stdout.
+
+The Decision Statement remains `authentication: none`, `mode: shadow`,
+`applied: false`, `activationCeiling: shadow-only`, and
+`servingAuthority: none`. It deliberately has no clock, revocation, current
+authorization, or replay enforcement. Authentication, trusted approval,
+freshness enforcement, atomic replay state, and live serving remain later and
+separate boundaries under a new protocol family. See the repository-owned
+[`v0.1` specification](../attestations/cache-admission-decision/v0.1.md).
 
 ## Two caches, two different problems
 

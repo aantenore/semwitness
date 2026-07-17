@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { Buffer } from 'node:buffer';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
@@ -39,19 +40,28 @@ import {
 import {
   DeclarativeIntentNormalizer,
   IntentWitnessError,
+  MAX_CACHE_HIT_WITNESS_ARTIFACT_BYTES,
   evaluateIntentNormalizer,
   parseIntentEvaluationJsonl,
   type IntentEvaluationCase,
   type IntentEvaluationFixture,
 } from '../intent/index.js';
 import {
+  MAX_INTENT_CACHE_ADMISSION_DECISION_BYTES,
   MAX_INTENT_CACHE_ADMISSION_PASSPORT_BYTES,
+  MAX_INTENT_CACHE_ADMISSION_SECRET_BYTES,
+  MAX_INTENT_CACHE_ADMISSION_VALUE_BYTES,
+  createIntentCacheAdmissionDecisionStatement,
   createIntentCacheAdmissionPassportStatement,
+  digestIntentCacheAdmissionDecisionCanonicalProfile,
   digestIntentCacheAdmissionPassportCanonicalProfile,
   evaluateIntentCachePromotionEvidence,
+  serializeIntentCacheAdmissionDecisionStatement,
   serializeIntentCacheShadowQualificationManifest,
   serializeIntentCacheAdmissionPassportStatement,
+  verifyIntentCacheAdmissionDecisionStatementBinding,
   verifyIntentCacheAdmissionPassportStatementBinding,
+  type IntentCacheAdmissionDecisionEvidence,
 } from '../intent-host/index.js';
 import {
   evaluateHostPromotionEvidence,
@@ -75,17 +85,23 @@ import {
   writeNewPrivateFile,
 } from './io.js';
 
-const VERSION = '0.5.0-alpha.4';
+const VERSION = '0.5.0-alpha.5';
 const ERROR_SCHEMA = 'semwitness.dev/cli-error/v1alpha1';
 const MAX_INTENT_NORMALIZER_BYTES = 4 * 1024 * 1024;
 const MAX_INTENT_COMPILER_BINDING_BYTES = 64 * 1024;
 const MAX_PROMOTION_EVIDENCE_BYTES = 32 * 1024 * 1024;
 const MAX_INTENT_PROMOTION_EVIDENCE_BYTES = 128 * 1024 * 1024;
 const MAX_INTENT_CACHE_QUALIFICATION_BYTES = 256 * 1024;
+const MAX_INTENT_ADMISSION_EVIDENCE_DOCUMENT_BYTES = 256 * 1024;
+const MAX_INTENT_ADMISSION_BINDING_BYTES = 64 * 1024;
 const INTENT_CACHE_ADMISSION_PASSPORT_BINDING_SCHEMA =
   'semwitness.dev/intent-cache-admission-passport-binding-verification/v1alpha1' as const;
 const INTENT_CACHE_ADMISSION_PASSPORT_CREATION_SCHEMA =
   'semwitness.dev/intent-cache-admission-passport-creation/v1alpha1' as const;
+const INTENT_CACHE_ADMISSION_DECISION_BINDING_SCHEMA =
+  'semwitness.dev/intent-cache-admission-decision-binding-verification/v1alpha1' as const;
+const INTENT_CACHE_ADMISSION_DECISION_CREATION_SCHEMA =
+  'semwitness.dev/intent-cache-admission-decision-creation/v1alpha1' as const;
 const DEFAULT_MAX_INTENT_REQUESTS = 100;
 const MAX_INTENT_REQUESTS = 1_000;
 const INTENT_COMPILER_BINDING_SCHEMA =
@@ -100,6 +116,17 @@ interface InputOptions {
   readonly trust: TrustLevel;
   readonly policy?: string;
   readonly store?: string;
+}
+
+interface IntentAdmissionEvidenceOptions {
+  readonly qualification: string;
+  readonly passport: string;
+  readonly cacheHitWitness: string;
+  readonly normalizationWitness: string;
+  readonly operationBinding: string;
+  readonly entrySourceBinding: string;
+  readonly cacheKeySecretEnv: string;
+  readonly valueFile: string;
 }
 
 export async function runCli(
@@ -268,7 +295,7 @@ export async function runCli(
   const intent = program
     .command('intent')
     .description(
-      'Evaluate typed intent normalization in shadow mode, offline by default.',
+      'Evaluate typed intent normalization and shadow cache lineage, offline by default.',
     );
 
   intent
@@ -495,6 +522,91 @@ export async function runCli(
       }
     });
 
+  const intentAdmission = intent
+    .command('admission')
+    .description(
+      'Create and inspect unsigned shadow-only Cache Admission Decision Statements.',
+    );
+
+  addIntentAdmissionEvidenceOptions(
+    intentAdmission
+      .command('create')
+      .description(
+        'Bind one exact Passport and eligible cache-hit witness without granting serving authority.',
+      )
+      .requiredOption(
+        '--statement-out <file>',
+        'New private Statement path; existing files are refused',
+      ),
+  )
+    .option('--json', 'Emit stable JSON (default)')
+    .action(
+      async (
+        options: IntentAdmissionEvidenceOptions & { statementOut: string },
+      ) => {
+        const evidence = await loadIntentAdmissionEvidence(options);
+        const statement = createIntentCacheAdmissionDecisionStatement(evidence);
+        const statementBytes =
+          serializeIntentCacheAdmissionDecisionStatement(statement);
+        const canonicalProfileDigest =
+          digestIntentCacheAdmissionDecisionCanonicalProfile(statement);
+        await writeNewPrivateFile(
+          options.statementOut,
+          new TextEncoder().encode(statementBytes),
+        );
+        writeJson({
+          schema: INTENT_CACHE_ADMISSION_DECISION_CREATION_SCHEMA,
+          kind: 'creation-only',
+          created: true,
+          authentication: 'none',
+          mode: 'shadow',
+          activationCeiling: 'shadow-only',
+          servingAuthority: 'none',
+          canonicalProfileDigest,
+          payloadDigest: canonicalProfileDigest,
+          statementPassportPayloadDigest: `sha256:${statement.subject[0].digest.sha256}`,
+          statementWitnessPayloadDigest: `sha256:${statement.subject[1].digest.sha256}`,
+        });
+      },
+    );
+
+  addIntentAdmissionEvidenceOptions(
+    intentAdmission
+      .command('inspect')
+      .description(
+        'Verify exact Statement bytes and every derived field against private creation evidence.',
+      )
+      .requiredOption(
+        '--statement <file>',
+        'Admission Decision Statement file',
+      ),
+  )
+    .option('--json', 'Emit stable JSON (default)')
+    .action(
+      async (
+        options: IntentAdmissionEvidenceOptions & { statement: string },
+      ) => {
+        const verification = verifyIntentCacheAdmissionDecisionStatementBinding(
+          await readBoundedRegularFile(
+            options.statement,
+            MAX_INTENT_CACHE_ADMISSION_DECISION_BYTES,
+          ),
+          await loadIntentAdmissionEvidence(options),
+        );
+        writeJson({
+          schema: INTENT_CACHE_ADMISSION_DECISION_BINDING_SCHEMA,
+          kind: 'binding-only',
+          authentication: 'none',
+          mode: 'shadow',
+          activationCeiling: 'shadow-only',
+          ...verification,
+        });
+        if (!verification.bound) {
+          verdictExitCode = Math.max(verdictExitCode, 2);
+        }
+      },
+    );
+
   const promotion = program
     .command('promotion')
     .description(
@@ -655,6 +767,136 @@ function addInputOptions(command: Command, requireStore: boolean): Command {
         '--store <directory>',
         'Optional local CAS parent directory',
       );
+}
+
+function addIntentAdmissionEvidenceOptions(command: Command): Command {
+  return command
+    .requiredOption(
+      '--qualification <file>',
+      'Exact canonical shadow qualification artifact',
+    )
+    .requiredOption(
+      '--passport <file>',
+      'Exact canonical Cache Admission Passport payload',
+    )
+    .requiredOption(
+      '--cache-hit-witness <file>',
+      'Exact canonical eligible CacheHitWitness payload',
+    )
+    .requiredOption(
+      '--normalization-witness <file>',
+      'Current NormalizationWitness JSON file',
+    )
+    .requiredOption(
+      '--operation-binding <file>',
+      'Intent-cache operation binding JSON file',
+    )
+    .requiredOption(
+      '--entry-source-binding <file>',
+      'Intent-cache entry-source binding JSON file',
+    )
+    .requiredOption(
+      '--cache-key-secret-env <name>',
+      'SEMWITNESS_* environment variable containing the deployment HMAC secret',
+    )
+    .requiredOption(
+      '--value-file <file>',
+      'Exact private candidate value bytes; never emitted',
+    );
+}
+
+async function loadIntentAdmissionEvidence(
+  options: IntentAdmissionEvidenceOptions,
+): Promise<IntentCacheAdmissionDecisionEvidence> {
+  const [
+    qualificationBytes,
+    passport,
+    cacheHitWitness,
+    normalizationWitnessBytes,
+    operationBindingBytes,
+    entrySourceBindingBytes,
+    value,
+  ] = await Promise.all([
+    readBoundedRegularFile(
+      options.qualification,
+      MAX_INTENT_CACHE_QUALIFICATION_BYTES,
+    ),
+    readBoundedRegularFile(
+      options.passport,
+      MAX_INTENT_CACHE_ADMISSION_PASSPORT_BYTES,
+    ),
+    readBoundedRegularFile(
+      options.cacheHitWitness,
+      MAX_CACHE_HIT_WITNESS_ARTIFACT_BYTES,
+    ),
+    readBoundedRegularFile(
+      options.normalizationWitness,
+      MAX_INTENT_ADMISSION_EVIDENCE_DOCUMENT_BYTES,
+    ),
+    readBoundedRegularFile(
+      options.operationBinding,
+      MAX_INTENT_ADMISSION_BINDING_BYTES,
+    ),
+    readBoundedRegularFile(
+      options.entrySourceBinding,
+      MAX_INTENT_ADMISSION_BINDING_BYTES,
+    ),
+    readBoundedRegularFile(
+      options.valueFile,
+      MAX_INTENT_CACHE_ADMISSION_VALUE_BYTES,
+    ),
+  ]);
+  return Object.freeze({
+    qualification: parseIntentCacheQualificationDocument(qualificationBytes),
+    passport,
+    cacheHitWitness,
+    normalizationWitness: parseIntentAdmissionJsonDocument(
+      normalizationWitnessBytes,
+      'Normalization witness',
+    ),
+    operationBinding: parseIntentAdmissionJsonDocument(
+      operationBindingBytes,
+      'Operation binding',
+    ),
+    entrySourceBinding: parseIntentAdmissionJsonDocument(
+      entrySourceBindingBytes,
+      'Entry-source binding',
+    ),
+    cacheKeySecret: resolveIntentAdmissionSecret(options.cacheKeySecretEnv),
+    value,
+  });
+}
+
+function parseIntentAdmissionJsonDocument(
+  bytes: Uint8Array,
+  label: string,
+): JsonValue {
+  return parseStrictJson(decodeUtf8(bytes, `${label} must be UTF-8`), {
+    maxDepth: 32,
+    maxItems: 16_384,
+    maxStringCodeUnits: 64 * 1024,
+    maxNumberCodeUnits: 32,
+  });
+}
+
+function resolveIntentAdmissionSecret(environmentRef: string): string {
+  if (!SAFE_ENVIRONMENT_REF.test(environmentRef)) {
+    throw new SemWitnessError(
+      'MALFORMED_ENVELOPE',
+      'Intent admission HMAC secret reference is invalid',
+    );
+  }
+  const secret = process.env[environmentRef];
+  if (
+    secret === undefined ||
+    Buffer.byteLength(secret, 'utf8') > MAX_INTENT_CACHE_ADMISSION_SECRET_BYTES
+  ) {
+    throw new SemWitnessError(
+      'MALFORMED_ENVELOPE',
+      'Intent admission HMAC secret is unavailable or invalid',
+    );
+  }
+  return secret;
 }
 
 function parseRole(value: string): SegmentRole {

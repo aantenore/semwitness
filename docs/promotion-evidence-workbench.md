@@ -1,7 +1,7 @@
 # Promotion Evidence Workbench delivery contract
 
 - Date: 2026-07-16
-- Source/plugin snapshot: unreleased `0.5.0-alpha.4`
+- Source/plugin snapshot: unreleased `0.5.0-alpha.5`
 - Delivery: branch validation, then merge to `main`; no package release in this
   increment
 

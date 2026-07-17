@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { canonicalJson, toJsonValue } from '../src/domain/canonical-json.js';
 import { sha256 } from '../src/domain/hash.js';
 import { digestPolicy } from '../src/domain/policy.js';
 import {
@@ -13,11 +14,17 @@ import {
   digestHostPromotionCorpus,
 } from '../src/host/index.js';
 import {
+  createIntentCacheAdmissionPassportStatement,
   parseIntentCacheShadowQualificationManifest,
+  serializeIntentCacheAdmissionPassportStatement,
   serializeIntentCacheShadowQualificationManifest,
 } from '../src/intent-host/index.js';
+import { serializeCacheHitWitnessArtifact } from '../src/intent/index.js';
 import { makePolicy } from './helpers.js';
-import { createEmptyIntentPromotionFixture } from './support/intent-promotion-qualification-fixture.js';
+import {
+  createEmptyIntentPromotionFixture,
+  createUnsafeHitIntentPromotionFixture,
+} from './support/intent-promotion-qualification-fixture.js';
 
 const executeFile = promisify(execFile);
 const pluginRoot = fileURLToPath(
@@ -229,7 +236,7 @@ describe('bundled Codex plugin', () => {
 
     expect(result).toEqual({
       code: 0,
-      stdout: '0.5.0-alpha.4\n',
+      stdout: '0.5.0-alpha.5\n',
       stderr: '',
     });
   });
@@ -355,6 +362,154 @@ describe('bundled Codex plugin', () => {
     expect(skill).toContain('`bound: true` does not');
     expect(manifest.interface.defaultPrompt).toContain(
       'Create or inspect a shadow-only Cache Admission Passport Statement for this qualification.',
+    );
+  });
+
+  it('creates and inspects Admission Decision Statements in an isolated plugin', async () => {
+    const root = await temporaryRoot();
+    const plugin = await copyIsolatedPlugin();
+    const qualification = parseIntentCacheShadowQualificationManifest(
+      JSON.parse(await readFile(intentQualificationFixturePath, 'utf8')),
+    );
+    const fixture = createUnsafeHitIntentPromotionFixture();
+    const candidate = fixture.cases[0];
+    if (
+      candidate === undefined ||
+      (candidate.kind !== 'population-complete' &&
+        candidate.kind !== 'adversarial-complete') ||
+      candidate.path.kind !== 'candidate-bearing'
+    ) {
+      throw new TypeError('Expected one candidate-bearing admission fixture');
+    }
+
+    const paths = {
+      qualification: join(root, 'qualification.json'),
+      passport: join(root, 'passport.statement.json'),
+      cacheHitWitness: join(root, 'cache-hit-witness.json'),
+      normalizationWitness: join(root, 'normalization-witness.json'),
+      operationBinding: join(root, 'operation-binding.json'),
+      entrySourceBinding: join(root, 'entry-source-binding.json'),
+      value: join(root, 'candidate-value.bin'),
+      statement: join(root, 'admission-decision.statement.json'),
+    };
+    await Promise.all([
+      writeFile(
+        paths.qualification,
+        serializeIntentCacheShadowQualificationManifest(qualification),
+      ),
+      writeFile(
+        paths.passport,
+        serializeIntentCacheAdmissionPassportStatement(
+          createIntentCacheAdmissionPassportStatement(qualification),
+        ),
+      ),
+      writeFile(
+        paths.cacheHitWitness,
+        serializeCacheHitWitnessArtifact(candidate.path.cacheHitWitness),
+      ),
+      writeFile(
+        paths.normalizationWitness,
+        canonicalJson(toJsonValue(candidate.path.normalizationWitness)),
+      ),
+      writeFile(
+        paths.operationBinding,
+        canonicalJson(toJsonValue(candidate.path.operationBinding)),
+      ),
+      writeFile(
+        paths.entrySourceBinding,
+        canonicalJson(toJsonValue(candidate.path.entrySourceBinding)),
+      ),
+      writeFile(paths.value, 'candidate-artifact:true'),
+    ]);
+
+    const secretRef = 'SEMWITNESS_PLUGIN_ADMISSION_SECRET';
+    const previousSecret = process.env[secretRef];
+    process.env[secretRef] = '0123456789abcdef0123456789abcdef';
+    const evidenceArguments = [
+      '--qualification',
+      paths.qualification,
+      '--passport',
+      paths.passport,
+      '--cache-hit-witness',
+      paths.cacheHitWitness,
+      '--normalization-witness',
+      paths.normalizationWitness,
+      '--operation-binding',
+      paths.operationBinding,
+      '--entry-source-binding',
+      paths.entrySourceBinding,
+      '--cache-key-secret-env',
+      secretRef,
+      '--value-file',
+      paths.value,
+    ] as const;
+    let results:
+      | { readonly create: BundleExecution; readonly inspect: BundleExecution }
+      | undefined;
+    try {
+      const create = await executeIsolatedBundle(
+        plugin,
+        'intent',
+        'admission',
+        'create',
+        ...evidenceArguments,
+        '--statement-out',
+        paths.statement,
+        '--json',
+      );
+      const inspect = await executeIsolatedBundle(
+        plugin,
+        'intent',
+        'admission',
+        'inspect',
+        ...evidenceArguments,
+        '--statement',
+        paths.statement,
+        '--json',
+      );
+      results = { create, inspect };
+    } finally {
+      if (previousSecret === undefined) {
+        delete process.env[secretRef];
+      } else {
+        process.env[secretRef] = previousSecret;
+      }
+    }
+    if (results === undefined) {
+      throw new TypeError('Admission Decision plugin execution was incomplete');
+    }
+    const { create, inspect } = results;
+
+    expect(create).toMatchObject({ code: 0, stderr: '' });
+    expect(JSON.parse(create.stdout)).toMatchObject({
+      schema:
+        'semwitness.dev/intent-cache-admission-decision-creation/v1alpha1',
+      authentication: 'none',
+      mode: 'shadow',
+      activationCeiling: 'shadow-only',
+      servingAuthority: 'none',
+    });
+    expect(inspect).toMatchObject({ code: 0, stderr: '' });
+    expect(JSON.parse(inspect.stdout)).toMatchObject({
+      bound: true,
+      profileBound: true,
+      canonicalPayload: true,
+      servingAuthority: 'none',
+    });
+    expect(await readFile(paths.statement, 'utf8')).not.toMatch(/\n$/u);
+    expect(create.stdout).not.toContain('candidate-artifact:true');
+    expect(inspect.stdout).not.toContain('0123456789abcdef');
+
+    const skill = await readFile(plugin.skillPath, 'utf8');
+    const manifest = JSON.parse(
+      await readFile(plugin.manifestPath, 'utf8'),
+    ) as {
+      readonly interface: { readonly defaultPrompt: readonly string[] };
+    };
+    expect(skill).toContain('Cache Admission Decision Statement');
+    expect(skill).toContain('`servingAuthority: none`');
+    expect(manifest.interface.defaultPrompt).toContain(
+      'Create or inspect a shadow-only Cache Admission Decision Statement for this exact Passport and eligible hit.',
     );
   });
 

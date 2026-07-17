@@ -59,8 +59,14 @@ jobs:
             "$package_path"
           "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" --version
           "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" --help
-          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" intent passport create --help
-          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" intent passport inspect --help
+          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" intent passport create --help \
+            | grep -Fx 'Usage: semwitness intent passport create [options]'
+          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" intent passport inspect --help \
+            | grep -Fx 'Usage: semwitness intent passport inspect [options]'
+          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" intent admission create --help \
+            | grep -Fx 'Usage: semwitness intent admission create [options]'
+          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" intent admission inspect --help \
+            | grep -Fx 'Usage: semwitness intent admission inspect [options]'
           test -f "$RUNNER_TEMP/semwitness-install/node_modules/semwitness/dist/intent-host/index.js"
           test -f "$RUNNER_TEMP/semwitness-install/node_modules/semwitness/dist/intent-host/index.d.ts"
           cd "$RUNNER_TEMP/semwitness-install"
@@ -85,6 +91,66 @@ jobs:
             --qualification "$RUNNER_TEMP/installed-qualification.json" \
             --json
           test -s "$RUNNER_TEMP/installed-passport.statement.json"
+          cd "$GITHUB_WORKSPACE"
+          EVIDENCE_OUT="$RUNNER_TEMP/installed-admission-evidence" \
+          pnpm exec tsx --eval '
+            import { mkdirSync, writeFileSync } from "node:fs";
+            import { join } from "node:path";
+            import { canonicalJson, toJsonValue } from "./src/domain/canonical-json.ts";
+            import { serializeCacheHitWitnessArtifact } from "./src/intent/index.ts";
+            import { createUnsafeHitIntentPromotionFixture } from "./test/support/intent-promotion-qualification-fixture.ts";
+            const root = process.env.EVIDENCE_OUT;
+            if (root === undefined) throw new Error("missing EVIDENCE_OUT");
+            const candidate = createUnsafeHitIntentPromotionFixture().cases[0];
+            if (
+              candidate === undefined ||
+              (candidate.kind !== "population-complete" && candidate.kind !== "adversarial-complete") ||
+              candidate.path.kind !== "candidate-bearing"
+            ) throw new Error("missing candidate-bearing fixture");
+            mkdirSync(root, { recursive: true });
+            writeFileSync(join(root, "cache-hit-witness.json"), serializeCacheHitWitnessArtifact(candidate.path.cacheHitWitness));
+            writeFileSync(join(root, "normalization-witness.json"), canonicalJson(toJsonValue(candidate.path.normalizationWitness)));
+            writeFileSync(join(root, "operation-binding.json"), canonicalJson(toJsonValue(candidate.path.operationBinding)));
+            writeFileSync(join(root, "entry-source-binding.json"), canonicalJson(toJsonValue(candidate.path.entrySourceBinding)));
+            writeFileSync(join(root, "candidate-value.bin"), "candidate-artifact:true");
+          '
+          export SEMWITNESS_INSTALL_ADMISSION_SECRET='0123456789abcdef0123456789abcdef'
+          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" intent admission create \
+            --qualification "$RUNNER_TEMP/installed-qualification.json" \
+            --passport "$RUNNER_TEMP/installed-passport.statement.json" \
+            --cache-hit-witness "$RUNNER_TEMP/installed-admission-evidence/cache-hit-witness.json" \
+            --normalization-witness "$RUNNER_TEMP/installed-admission-evidence/normalization-witness.json" \
+            --operation-binding "$RUNNER_TEMP/installed-admission-evidence/operation-binding.json" \
+            --entry-source-binding "$RUNNER_TEMP/installed-admission-evidence/entry-source-binding.json" \
+            --cache-key-secret-env SEMWITNESS_INSTALL_ADMISSION_SECRET \
+            --value-file "$RUNNER_TEMP/installed-admission-evidence/candidate-value.bin" \
+            --statement-out "$RUNNER_TEMP/installed-admission.statement.json" \
+            --json > "$RUNNER_TEMP/installed-admission-create.json"
+          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" intent admission inspect \
+            --statement "$RUNNER_TEMP/installed-admission.statement.json" \
+            --qualification "$RUNNER_TEMP/installed-qualification.json" \
+            --passport "$RUNNER_TEMP/installed-passport.statement.json" \
+            --cache-hit-witness "$RUNNER_TEMP/installed-admission-evidence/cache-hit-witness.json" \
+            --normalization-witness "$RUNNER_TEMP/installed-admission-evidence/normalization-witness.json" \
+            --operation-binding "$RUNNER_TEMP/installed-admission-evidence/operation-binding.json" \
+            --entry-source-binding "$RUNNER_TEMP/installed-admission-evidence/entry-source-binding.json" \
+            --cache-key-secret-env SEMWITNESS_INSTALL_ADMISSION_SECRET \
+            --value-file "$RUNNER_TEMP/installed-admission-evidence/candidate-value.bin" \
+            --json > "$RUNNER_TEMP/installed-admission-inspect.json"
+          CREATE_RESULT="$RUNNER_TEMP/installed-admission-create.json" \
+          INSPECT_RESULT="$RUNNER_TEMP/installed-admission-inspect.json" \
+          node --input-type=module -e '
+            const fs = await import("node:fs");
+            const created = JSON.parse(fs.readFileSync(process.env.CREATE_RESULT, "utf8"));
+            const inspected = JSON.parse(fs.readFileSync(process.env.INSPECT_RESULT, "utf8"));
+            if (created.created !== true || created.servingAuthority !== "none") {
+              throw new Error("installed admission create failed");
+            }
+            if (inspected.bound !== true || inspected.canonicalPayload !== true || inspected.servingAuthority !== "none") {
+              throw new Error("installed admission inspect failed");
+            }
+          '
+          cd "$RUNNER_TEMP/semwitness-install"
           node --input-type=module -e '
             const api = await import("semwitness/intent/host");
             for (const name of [
@@ -100,9 +166,18 @@ jobs:
               "parseIntentCacheAdmissionPassportStatement",
               "serializeIntentCacheAdmissionPassportStatement",
               "digestIntentCacheAdmissionPassportCanonicalProfile",
-              "verifyIntentCacheAdmissionPassportStatementBinding"
+              "verifyIntentCacheAdmissionPassportStatementBinding",
+              "createIntentCacheAdmissionDecisionStatement",
+              "parseIntentCacheAdmissionDecisionStatement",
+              "serializeIntentCacheAdmissionDecisionStatement",
+              "digestIntentCacheAdmissionDecisionCanonicalProfile",
+              "verifyIntentCacheAdmissionDecisionStatementBinding"
             ]) {
               if (typeof api[name] !== "function") throw new Error(`missing ${name}`);
+            }
+            const intent = await import("semwitness/intent");
+            if (typeof intent.hmacCacheArtifactCommitments !== "function") {
+              throw new Error("missing hmacCacheArtifactCommitments");
             }
           '
 

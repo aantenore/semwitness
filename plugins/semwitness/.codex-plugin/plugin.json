@@ -1,7 +1,7 @@
 {
   "name": "semwitness",
-  "version": "0.5.0-alpha.4",
-  "description": "Proof-carrying compression, bounded intent evaluation, and shadow qualification lineage.",
+  "version": "0.5.0-alpha.5",
+  "description": "Proof-carrying compression, bounded intent evaluation, and exact shadow cache lineage.",
   "author": {
     "name": "Antonio Antenore",
     "email": "ant_ant95@hotmail.it",
@@ -24,7 +24,7 @@
   "interface": {
     "displayName": "SemWitness",
     "shortDescription": "Verify compression, intent candidates, promotion evidence, and shadow lineage.",
-    "longDescription": "SemWitness analyzes context, verifies deterministic compression, evaluates bounded intent compilers, runs separate fail-closed evidence workbenches, and creates content-free in-toto Passport Statements for shadow-only intent-cache qualification lineage without transparent prompt interception or cache authorization.",
+    "longDescription": "SemWitness analyzes context, verifies deterministic compression, evaluates bounded intent compilers, runs separate fail-closed evidence workbenches, and creates content-free in-toto Passport and per-hit Decision Statements for exact shadow-only intent-cache lineage without transparent prompt interception or cache authorization.",
     "developerName": "Antonio Antenore",
     "category": "Developer Tools",
     "capabilities": ["Interactive", "Read", "Write"],
@@ -36,6 +36,7 @@
       "Evaluate this held-out promotion evidence and emit a manifest only if every gate passes.",
       "Evaluate this payload-free intent-cache evidence and emit a shadow qualification only if every gate passes.",
       "Create or inspect a shadow-only Cache Admission Passport Statement for this qualification.",
+      "Create or inspect a shadow-only Cache Admission Decision Statement for this exact Passport and eligible hit.",
       "Evaluate this intent normalizer offline in shadow mode.",
       "Evaluate an OpenAI-compatible intent compiler with explicit network opt-in and a request budget."
     ],

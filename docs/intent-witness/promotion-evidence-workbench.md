@@ -500,7 +500,9 @@ Should, after this tranche:
   approval envelope without changing the Passport's shadow-only meaning. DSSE
   must verify `PAE(payloadType, payload)`, authenticating both the declared type
   and exact payload bytes; the normalized profile digest is not a substitute.
-- Define a short-lived per-entry Admission Receipt before any active adapter.
+- Keep the implemented per-hit Decision Statement unsigned and shadow-only;
+  define a separate authenticated, time/revocation/replay-enforced active
+  admission protocol before any serving adapter.
 - Add authenticated immutable cache records and a `TierStore` port.
 - Add a read-only shadow runtime that emits this evidence without exposing
   candidate values.

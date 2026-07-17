@@ -1,6 +1,6 @@
 ---
 name: semwitness
-description: Use this skill when a user wants to analyze LLM context size, simulate verified semantic compression, inspect or verify a SemWitness proof bundle, retrieve a locally stored original by digest, replay compression fixtures, compile compression-host promotion evidence, qualify payload-free intent-cache evidence, create or inspect a shadow-only Cache Admission Passport Statement, evaluate intent compilers, or measure token savings without transparent prompt interception.
+description: Use this skill when a user wants to analyze LLM context size, simulate verified semantic compression, inspect or verify a SemWitness proof bundle, retrieve a locally stored original by digest, replay compression fixtures, compile compression-host promotion evidence, qualify payload-free intent-cache evidence, create or inspect a shadow-only Cache Admission Passport or per-hit Decision Statement, evaluate intent compilers, or measure token savings without transparent prompt interception.
 ---
 
 # SemWitness
@@ -16,7 +16,8 @@ payload-free held-out usage and task-quality observations into a compression-hos
 promotion manifest. A separate workbench can qualify one bound intent-cache
 operation for shadow observation only; that qualification never serves a cache
 value. The installed CLI can convert it into a deterministic in-toto Cache
-Admission Passport Statement and inspect exact binding only.
+Admission Passport Statement, bind that exact Passport to one exact eligible
+hit as a separate Decision Statement, and inspect exact binding only.
 
 SemWitness is a shadow-mode tool. It does not intercept, replace, or silently rewrite Codex prompts, tool calls, or responses.
 
@@ -89,7 +90,16 @@ If the launcher reports that `dist/cli.mjs` is missing, stop and explain that th
     equality and workload shape. A parsed extension is never admitted by the
     strict content-free profile and must produce `extensionsPresent: true` and
     `bound: false`.
-16. The plugin cannot transparently replace prompt ingress. Actual token savings
+16. Treat a Cache Admission Decision Statement only as historical per-hit
+    shadow lineage. Its two subjects must be the exact canonical Passport and
+    `CacheHitWitness` payloads. `authentication: none`, `mode: shadow`,
+    `applied: false`, `activationCeiling: shadow-only`, and
+    `servingAuthority: none` are invariant. Never infer clock, revocation,
+    current authorization, replay protection, or serving permission from
+    `bound: true`. Pass the HMAC secret only through a named `SEMWITNESS_*`
+    environment variable and the candidate through `--value-file`; never echo,
+    log, publish, sign into authority, or place either value in argv.
+17. The plugin cannot transparently replace prompt ingress. Actual token savings
     require a visible Codex SDK/App Server integration or gateway that applies a
     separately admitted candidate before the provider call.
 
@@ -225,6 +235,47 @@ The exported DSSE media type is future metadata; this plugin does not sign,
 verify trust, or raise the shadow ceiling. A future DSSE implementation must
 sign `PAE(payloadType, payload)`, not the raw payload alone.
 
+Create a per-hit Decision Statement from exact private evidence:
+
+```bash
+node <plugin-root>/scripts/semwitness.mjs intent admission create \
+  --qualification <shadow-qualification> \
+  --passport <passport.statement.json> \
+  --cache-hit-witness <canonical-cache-hit-witness.json> \
+  --normalization-witness <normalization-witness.json> \
+  --operation-binding <operation-binding.json> \
+  --entry-source-binding <entry-source-binding.json> \
+  --cache-key-secret-env SEMWITNESS_CACHE_KEY_SECRET \
+  --value-file <private-candidate-value> \
+  --statement-out <new-private-admission-decision.statement.json> \
+  --json
+```
+
+Inspect exact Statement bytes against the same private evidence:
+
+```bash
+node <plugin-root>/scripts/semwitness.mjs intent admission inspect \
+  --statement <admission-decision.statement.json> \
+  --qualification <shadow-qualification> \
+  --passport <passport.statement.json> \
+  --cache-hit-witness <canonical-cache-hit-witness.json> \
+  --normalization-witness <normalization-witness.json> \
+  --operation-binding <operation-binding.json> \
+  --entry-source-binding <entry-source-binding.json> \
+  --cache-key-secret-env SEMWITNESS_CACHE_KEY_SECRET \
+  --value-file <private-candidate-value> \
+  --json
+```
+
+Creation and inspection require the deployment secret and exact candidate value
+only to recompute the cache key, keyed commitments, and value binding. They
+never enter the Statement or stdout. Exit `0` means creation completed or exact
+binding passed; exit `2` means a well-formed Statement is mismatched, extended,
+or non-canonical; exit `1` means malformed, unsafe, missing, or unreadable input.
+`profileBound` without exact payload identity is not `bound`. The artifact is a
+Decision Statement, not a SCITT/COSE transparency receipt and not a serving
+credential.
+
 Evaluate a declarative intent normalizer without serving cache values:
 
 ```bash
@@ -297,6 +348,13 @@ For Passport creation or inspection, report the Statement path,
 shadow-only, and not an authorization. Do not expose the qualification's scope
 HMACs unless the user explicitly needs artifact-level inspection, and do not
 publish the private artifacts.
+
+For Admission Decision creation or inspection, report the Statement path,
+`profileBound`, `canonicalPayload`, exact `payloadDigest`, both subject payload
+digests, `bound`, and `servingAuthority: none`. State that the result is
+unsigned, shadow-only, not time/revocation/replay enforced, and not permission
+to serve. Never expose the HMAC secret, candidate value, scope commitments,
+input paths, or raw evidence.
 
 For intent evaluation, report exact-intent accuracy, bypass accuracy, unsafe
 accepts, repeatability failures, equivalent-pair convergence, and distinct-pair

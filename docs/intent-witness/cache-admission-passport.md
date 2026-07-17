@@ -57,9 +57,10 @@ flowchart LR
     M --> S["Exact canonical Passport Statement bytes"]
     S --> B["Strict content-free binding inspector"]
     M --> B
-    S -. "future external DSSE envelope" .-> D["External trust verifier"]
-    D -. "cannot raise the embedded ceiling" .-> R["Future admission receipt"]
-    R -. "not implemented" .-> C["Cache runtime"]
+    H["Exact eligible CacheHitWitness payload"] --> A["Shadow Decision Statement"]
+    S --> A
+    A -. "future external DSSE envelope" .-> D["External trust verifier"]
+    D -. "cannot raise the embedded ceiling" .-> C["No cache serving authority"]
 ```
 
 The Statement and qualification are separate artifacts. Each file is the exact
@@ -272,18 +273,20 @@ qualification and Passport files private with mode `0600`, enforce
 deployment-level ACLs and retention, and do not publish them as CI artifacts,
 logs, issue attachments, or release assets.
 
-## Why a future Admission Receipt is separate
+## Per-hit Decision Statement and future active admission
 
 A long-lived qualification cannot safely decide reuse of an individual entry.
-An active design also needs a short-lived receipt bound to the exact Passport
-payload digest, candidate/value commitments, current scope, compatibility
-digest, policy/key epochs, freshness, nonce or sequence, and a replay store.
-Low-entropy request commitments must be keyed per scope rather than plain
-hashes.
+SemWitness therefore implements a separate unsigned Cache Admission Decision
+Statement that binds the exact Passport and exact eligible `CacheHitWitness`
+payloads, verifies their private cross-links, and emits keyed entry/value
+commitments. It remains shadow-only and has no serving authority.
 
-That receipt is deliberately not implemented. The portable proof and policy
-may be shared across RedisVL, GPTCache, semantic routers, LMCache, llm-d, or
-other adapters; physical keys and values remain adapter-specific.
+An active design still needs a new authenticated protocol with current scope
+and authorization, policy/key epochs, trusted clock and revocation, freshness,
+nonce or sequence, and an atomic replay store. That active authorization is not
+implemented and cannot be inferred from either Statement. The portable proof
+and policy may be shared across RedisVL, GPTCache, semantic routers, LMCache,
+llm-d, or other adapters; physical keys and values remain adapter-specific.
 
 ## Out of scope
 

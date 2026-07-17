@@ -7,10 +7,10 @@ can place verified canonical JSON into explicitly selected AI SDK tool results;
 the CLI and Codex plugin remain local, explicit, shadow-only Compression CI.
 The repository also contains IntentWitness, a bounded, typed
 intent-normalization and cache-admission lab. Its Cache Admission Passport
-Statement v0.1 exports content-free qualification lineage as an unsigned
-in-toto Statement under a
-[repository-controlled predicate](docs/attestations/cache-admission-passport/v0.1.md).
-IntentWitness never serves cached values.
+exports qualification lineage, while its Cache Admission Decision Statement
+binds that exact Passport to one exact eligible shadow hit. Both are unsigned
+in-toto Statements under repository-controlled predicates, and neither grants
+serving authority. IntentWitness never serves cached values.
 
 > Proof-carrying does not mean “the meaning is mathematically proved.” A SemWitness bundle proves checkable facts such as hashes, byte-exact protected segments, reversible decoding, typed-JSON equivalence, policy/codec identity, anchors, and token accounting. Natural-language semantic equivalence is not claimed.
 
@@ -124,6 +124,8 @@ The CLI has deliberately **no live `compress` command** in v0.1.
 | `intent promotion evaluate --evidence <jsonl> [options]`                      | Qualify payload-free intent-cache evidence for one plan/read operation in shadow mode; never serve a cache value.                 |
 | `intent passport create --qualification <json> --statement-out <json>`        | Derive an exact private canonical in-toto Statement and print a receipt only; never create an authorization credential.           |
 | `intent passport inspect --statement <json> --qualification <json>`           | Verify strict content-free binding and exact payload identity; report `bound`, never an active admission decision.                |
+| `intent admission create [evidence options] --statement-out <json>`           | Bind an exact Passport and eligible hit to a private per-decision Statement; secret and value remain private.                     |
+| `intent admission inspect --statement <json> [evidence options]`              | Verify exact Statement bytes and all private cross-links; `bound` still carries no serving authority.                             |
 | `promotion evaluate --evidence <jsonl> --policy <yaml> [options]`             | Compile host-attested held-out usage and quality evidence into a host promotion only when every hard gate passes.                 |
 
 `analyze` and `simulate` accept a file through `--input` or standard input, plus explicit `--role`, `--kind`, `--trust`, optional `--policy`, `--store`, and `--json`. Run `pnpm semwitness <command> --help` for the authoritative options of the checked-out version.
@@ -524,7 +526,7 @@ The parser may ignore bounded data-only in-toto extensions monotonically, but
 the stricter content-free inspector reports `extensionsPresent: true` and
 `bound: false` for any extended payload. It distinguishes the exact supplied
 `payloadDigest` from the extension-eliding `canonicalProfileDigest`; only the
-former is suitable for a future signed-payload or receipt commitment.
+former is suitable for a signed-payload or external transparency commitment.
 String/byte binding also requires `canonicalPayload: true`, so whitespace,
 key-order, or escape variants cannot bind; object-only API verification has no
 byte identity.
@@ -536,6 +538,46 @@ bytes, but a valid signature cannot by itself raise this ceiling. Stable HMACs
 and digests still reveal equality and workload shape, so keep both files
 `0600`, apply deployment ACLs, and do not publish them. See the [Passport
 Statement contract](docs/intent-witness/cache-admission-passport.md).
+
+Bind that Passport to one exact eligible shadow hit as a **Cache Admission
+Decision Statement**:
+
+```bash
+export SEMWITNESS_CACHE_KEY_SECRET="$(openssl rand -base64 32)"
+
+pnpm semwitness intent admission create \
+  --qualification <new-private-shadow-qualification.json> \
+  --passport <new-private-passport.statement.json> \
+  --cache-hit-witness <canonical-cache-hit-witness.json> \
+  --normalization-witness <normalization-witness.json> \
+  --operation-binding <operation-binding.json> \
+  --entry-source-binding <entry-source-binding.json> \
+  --cache-key-secret-env SEMWITNESS_CACHE_KEY_SECRET \
+  --value-file <private-candidate-value> \
+  --statement-out <new-private-admission-decision.statement.json> \
+  --json
+```
+
+In production, source this CSPRNG-generated value from a secret manager and
+track its rotation as an external key epoch; do not use a human passphrase or a
+predictable 32-byte pattern.
+
+The Statement has two exact-payload subjects: Passport and CacheHitWitness. It
+rechecks qualification, normalizer, ontology, operation, shared plan-tier
+dependencies, namespace/tenant, entry, value, and policy cross-links, then
+replaces public entry/value hashes with domain-separated keyed commitments.
+The Passport's full dependency and deployment-scope digests remain explicitly
+qualification-declared fields because the per-hit witness does not carry them.
+Inspection requires the same private evidence and exact Statement bytes;
+object-only comparison may be `profileBound` but is never byte `bound`.
+
+This v0.1 artifact remains `authentication: none`, `mode: shadow`,
+`applied: false`, `activationCeiling: shadow-only`, and
+`servingAuthority: none`. It intentionally has no clock, revocation, current
+authorization, or replay enforcement. It is called a Decision Statement rather
+than a SCITT Receipt because transparency inclusion and decision correctness are
+separate claims. See the [Decision Statement
+contract](docs/intent-witness/cache-admission-decision.md).
 
 ## Roadmap
 
@@ -557,6 +599,7 @@ Statement contract](docs/intent-witness/cache-admission-passport.md).
 - [IntentWitness Normalizer Lab](docs/intent-witness/normalizer-lab.md)
 - [IntentWitness Promotion Evidence Workbench](docs/intent-witness/promotion-evidence-workbench.md)
 - [IntentWitness Cache Admission Passport Statement](docs/intent-witness/cache-admission-passport.md)
+- [IntentWitness Cache Admission Decision Statement](docs/intent-witness/cache-admission-decision.md)
 
 ## License
 
