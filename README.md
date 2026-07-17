@@ -6,8 +6,11 @@ the default. The v0.5 alpha adds an opt-in, promotion-gated host boundary that
 can place verified canonical JSON into explicitly selected AI SDK tool results;
 the CLI and Codex plugin remain local, explicit, shadow-only Compression CI.
 The repository also contains IntentWitness, a bounded, typed
-intent-normalization and cache-admission lab. IntentWitness never serves cached
-values.
+intent-normalization and cache-admission lab. Its Cache Admission Passport
+Statement v0.1 exports content-free qualification lineage as an unsigned
+in-toto Statement under a
+[repository-controlled predicate](docs/attestations/cache-admission-passport/v0.1.md).
+IntentWitness never serves cached values.
 
 > Proof-carrying does not mean “the meaning is mathematically proved.” A SemWitness bundle proves checkable facts such as hashes, byte-exact protected segments, reversible decoding, typed-JSON equivalence, policy/codec identity, anchors, and token accounting. Natural-language semantic equivalence is not claimed.
 
@@ -119,6 +122,8 @@ The CLI has deliberately **no live `compress` command** in v0.1.
 | `replay --fixture <jsonl-file> [--policy <yaml-file>] [--store <dir>] --json` | Re-run a corpus deterministically and check declared mechanical expectations.                                                     |
 | `intent evaluate --normalizer <registry> --fixture <jsonl> [options]`         | Evaluate an exact-alias compiler offline, or an explicitly networked compiler in bounded shadow mode; never serve a cache value.  |
 | `intent promotion evaluate --evidence <jsonl> [options]`                      | Qualify payload-free intent-cache evidence for one plan/read operation in shadow mode; never serve a cache value.                 |
+| `intent passport create --qualification <json> --statement-out <json>`        | Derive an exact private canonical in-toto Statement and print a receipt only; never create an authorization credential.           |
+| `intent passport inspect --statement <json> --qualification <json>`           | Verify strict content-free binding and exact payload identity; report `bound`, never an active admission decision.                |
 | `promotion evaluate --evidence <jsonl> --policy <yaml> [options]`             | Compile host-attested held-out usage and quality evidence into a host promotion only when every hard gate passes.                 |
 
 `analyze` and `simulate` accept a file through `--input` or standard input, plus explicit `--role`, `--kind`, `--trust`, optional `--policy`, `--store`, and `--json`. Run `pnpm semwitness <command> --help` for the authoritative options of the checked-out version.
@@ -495,6 +500,43 @@ internal failure. The qualification remains `host-attested-unsigned` with an
 not cache authorization. See the [intent-cache workbench
 contract](docs/intent-witness/promotion-evidence-workbench.md).
 
+Convert that qualification into a portable, content-free **Cache Admission
+Passport Statement** and inspect its binding:
+
+```bash
+pnpm semwitness intent passport create \
+  --qualification <new-private-shadow-qualification.json> \
+  --statement-out <new-private-passport.statement.json> \
+  --json
+
+pnpm semwitness intent passport inspect \
+  --statement <new-private-passport.statement.json> \
+  --qualification <new-private-shadow-qualification.json> \
+  --json
+```
+
+The qualification and Statement files are exact canonical UTF-8 bytes without
+a trailing line feed; the single in-toto subject is reproducible from the
+qualification file's SHA-256 digest. Creation stdout is receipt-only and does
+not echo the Statement or its stable scope HMACs.
+
+The parser may ignore bounded data-only in-toto extensions monotonically, but
+the stricter content-free inspector reports `extensionsPresent: true` and
+`bound: false` for any extended payload. It distinguishes the exact supplied
+`payloadDigest` from the extension-eliding `canonicalProfileDigest`; only the
+former is suitable for a future signed-payload or receipt commitment.
+String/byte binding also requires `canonicalPayload: true`, so whitespace,
+key-order, or escape variants cannot bind; object-only API verification has no
+byte identity.
+
+The Statement remains unsigned and `shadow-only`; its canonical RFC 3339
+validity and revocation fields are copied claims, not enforcement. DSSE would
+sign `PAE(payloadType, payload)`, authenticating both the type and exact payload
+bytes, but a valid signature cannot by itself raise this ceiling. Stable HMACs
+and digests still reveal equality and workload shape, so keep both files
+`0600`, apply deployment ACLs, and do not publish them. See the [Passport
+Statement contract](docs/intent-witness/cache-admission-passport.md).
+
 ## Roadmap
 
 1. Stabilize the v0.1 witness schema, deterministic codecs, adversarial tests, replay gate, and Codex shadow plugin.
@@ -514,6 +556,7 @@ contract](docs/intent-witness/promotion-evidence-workbench.md).
 - [IntentWitness market and research landscape](docs/intent-witness/landscape.md)
 - [IntentWitness Normalizer Lab](docs/intent-witness/normalizer-lab.md)
 - [IntentWitness Promotion Evidence Workbench](docs/intent-witness/promotion-evidence-workbench.md)
+- [IntentWitness Cache Admission Passport Statement](docs/intent-witness/cache-admission-passport.md)
 
 ## License
 

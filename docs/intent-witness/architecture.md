@@ -26,6 +26,25 @@ on independently diverging runtime, governance, adoption, or release cadence:
 - future versions evolve independently of `semwitness-bundle/*` and codec
   versions.
 
+The Cache Admission Passport Statement is the outward-facing lineage boundary
+for a qualified experiment. It summarizes one separate shadow qualification as
+an in-toto Statement with a single digest subject. It contains no cache value
+and returns only strict content-free binding evidence. The qualification and
+Statement are exact canonical UTF-8 artifacts without trailing line feeds, so
+their subject and payload digests are reproducible from file bytes. The
+controlled predicate TypeURI is the repository-owned
+[`v0.1` specification](../attestations/cache-admission-passport/v0.1.md), and
+the artifact version is `0.1.0`.
+
+The parser and admission boundary intentionally differ. The in-toto parser may
+ignore bounded data-only extensions monotonically, while the content-free
+binding inspector records `extensionsPresent` and returns `bound: false` for
+any extended payload. `canonicalProfileDigest` identifies only the normalized
+supported profile; `payloadDigest` identifies exact supplied bytes and is the
+only suitable digest for a future signed-payload or admission-receipt
+commitment. Authentication, trusted approval, clock and revocation enforcement,
+per-entry receipts, and live serving remain later and separate boundaries.
+
 ## Two caches, two different problems
 
 | Layer                      | Match semantics                                                         | What a hit saves                                                  | IntentWitness responsibility                                                                          |

@@ -44,7 +44,15 @@ import {
   type IntentEvaluationCase,
   type IntentEvaluationFixture,
 } from '../intent/index.js';
-import { evaluateIntentCachePromotionEvidence } from '../intent-host/index.js';
+import {
+  MAX_INTENT_CACHE_ADMISSION_PASSPORT_BYTES,
+  createIntentCacheAdmissionPassportStatement,
+  digestIntentCacheAdmissionPassportCanonicalProfile,
+  evaluateIntentCachePromotionEvidence,
+  serializeIntentCacheShadowQualificationManifest,
+  serializeIntentCacheAdmissionPassportStatement,
+  verifyIntentCacheAdmissionPassportStatementBinding,
+} from '../intent-host/index.js';
 import {
   evaluateHostPromotionEvidence,
   parseHostPromotionEvidenceJsonl,
@@ -67,12 +75,17 @@ import {
   writeNewPrivateFile,
 } from './io.js';
 
-const VERSION = '0.5.0-alpha.3';
+const VERSION = '0.5.0-alpha.4';
 const ERROR_SCHEMA = 'semwitness.dev/cli-error/v1alpha1';
 const MAX_INTENT_NORMALIZER_BYTES = 4 * 1024 * 1024;
 const MAX_INTENT_COMPILER_BINDING_BYTES = 64 * 1024;
 const MAX_PROMOTION_EVIDENCE_BYTES = 32 * 1024 * 1024;
 const MAX_INTENT_PROMOTION_EVIDENCE_BYTES = 128 * 1024 * 1024;
+const MAX_INTENT_CACHE_QUALIFICATION_BYTES = 256 * 1024;
+const INTENT_CACHE_ADMISSION_PASSPORT_BINDING_SCHEMA =
+  'semwitness.dev/intent-cache-admission-passport-binding-verification/v1alpha1' as const;
+const INTENT_CACHE_ADMISSION_PASSPORT_CREATION_SCHEMA =
+  'semwitness.dev/intent-cache-admission-passport-creation/v1alpha1' as const;
 const DEFAULT_MAX_INTENT_REQUESTS = 100;
 const MAX_INTENT_REQUESTS = 1_000;
 const INTENT_COMPILER_BINDING_SCHEMA =
@@ -383,12 +396,101 @@ export async function runCli(
         await writeNewPrivateFile(
           options.manifestOut,
           new TextEncoder().encode(
-            `${canonicalJson(toJsonValue(result.qualification))}\n`,
+            serializeIntentCacheShadowQualificationManifest(
+              result.qualification,
+            ),
           ),
         );
       }
       writeJson(result);
       if (!result.qualified) {
+        verdictExitCode = Math.max(verdictExitCode, 2);
+      }
+    });
+
+  const intentPassport = intent
+    .command('passport')
+    .description(
+      'Create and inspect unsigned shadow-only Cache Admission Passport Statements.',
+    );
+
+  intentPassport
+    .command('create')
+    .description(
+      'Derive a content-free in-toto Statement from one shadow qualification.',
+    )
+    .requiredOption(
+      '--qualification <file>',
+      'Exact canonical shadow qualification artifact',
+    )
+    .requiredOption(
+      '--statement-out <file>',
+      'New private Statement path; existing files are refused',
+    )
+    .option('--json', 'Emit stable JSON (default)')
+    .action(
+      async (options: { qualification: string; statementOut: string }) => {
+        const qualification = parseIntentCacheQualificationDocument(
+          await readBoundedRegularFile(
+            options.qualification,
+            MAX_INTENT_CACHE_QUALIFICATION_BYTES,
+          ),
+        );
+        const statement =
+          createIntentCacheAdmissionPassportStatement(qualification);
+        const statementBytes =
+          serializeIntentCacheAdmissionPassportStatement(statement);
+        const canonicalProfileDigest =
+          digestIntentCacheAdmissionPassportCanonicalProfile(statement);
+        await writeNewPrivateFile(
+          options.statementOut,
+          new TextEncoder().encode(statementBytes),
+        );
+        writeJson({
+          schema: INTENT_CACHE_ADMISSION_PASSPORT_CREATION_SCHEMA,
+          kind: 'creation-only',
+          created: true,
+          authentication: 'none',
+          activationCeiling: 'shadow-only',
+          canonicalProfileDigest,
+          payloadDigest: canonicalProfileDigest,
+          statementQualificationDigest: `sha256:${statement.subject[0].digest.sha256}`,
+        });
+      },
+    );
+
+  intentPassport
+    .command('inspect')
+    .description(
+      'Validate a Statement and compare every derived field with its qualification.',
+    )
+    .requiredOption('--statement <file>', 'Passport Statement JSON file')
+    .requiredOption(
+      '--qualification <file>',
+      'Exact canonical shadow qualification artifact',
+    )
+    .option('--json', 'Emit stable JSON (default)')
+    .action(async (options: { statement: string; qualification: string }) => {
+      const verification = verifyIntentCacheAdmissionPassportStatementBinding(
+        await readBoundedRegularFile(
+          options.statement,
+          MAX_INTENT_CACHE_ADMISSION_PASSPORT_BYTES,
+        ),
+        parseIntentCacheQualificationDocument(
+          await readBoundedRegularFile(
+            options.qualification,
+            MAX_INTENT_CACHE_QUALIFICATION_BYTES,
+          ),
+        ),
+      );
+      writeJson({
+        schema: INTENT_CACHE_ADMISSION_PASSPORT_BINDING_SCHEMA,
+        kind: 'binding-only',
+        authentication: 'none',
+        activationCeiling: 'shadow-only',
+        ...verification,
+      });
+      if (!verification.bound) {
         verdictExitCode = Math.max(verdictExitCode, 2);
       }
     });
@@ -717,6 +819,40 @@ function parseIntentCompilerBinding(
       maxPromptBytes: policy.maxPromptBytes as number,
     }),
   });
+}
+
+function parseIntentCacheQualificationDocument(bytes: Uint8Array): JsonValue {
+  try {
+    const source = decodeUtf8(
+      bytes,
+      'Intent-cache qualification must be UTF-8',
+    );
+    const qualification = parseStrictJson(source, {
+      maxDepth: 32,
+      maxItems: 2_048,
+      maxStringCodeUnits: 4 * 1024,
+      maxNumberCodeUnits: 32,
+    });
+    const canonicalBytes = new TextEncoder().encode(
+      serializeIntentCacheShadowQualificationManifest(qualification),
+    );
+    if (
+      bytes.byteLength !== canonicalBytes.byteLength ||
+      canonicalBytes.some((byte, index) => byte !== bytes[index])
+    ) {
+      throw new SemWitnessError(
+        'MALFORMED_ENVELOPE',
+        'Intent-cache qualification must use exact canonical artifact bytes',
+      );
+    }
+    return qualification;
+  } catch (error) {
+    throw new SemWitnessError(
+      'MALFORMED_ENVELOPE',
+      'Intent-cache qualification is invalid',
+      error,
+    );
+  }
 }
 
 function strictJsonObject(

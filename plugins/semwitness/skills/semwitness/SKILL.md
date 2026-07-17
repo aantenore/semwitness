@@ -1,6 +1,6 @@
 ---
 name: semwitness
-description: Use this skill when a user wants to analyze LLM context size, simulate verified semantic compression, inspect or verify a SemWitness proof bundle, retrieve a locally stored original by digest, replay compression fixtures, compile compression-host promotion evidence, qualify payload-free intent-cache evidence in shadow mode, evaluate exact or OpenAI-compatible intent compilers, or measure token savings without transparent prompt interception.
+description: Use this skill when a user wants to analyze LLM context size, simulate verified semantic compression, inspect or verify a SemWitness proof bundle, retrieve a locally stored original by digest, replay compression fixtures, compile compression-host promotion evidence, qualify payload-free intent-cache evidence, create or inspect a shadow-only Cache Admission Passport Statement, evaluate intent compilers, or measure token savings without transparent prompt interception.
 ---
 
 # SemWitness
@@ -15,7 +15,8 @@ intent compilers against strict ground truth. It can compile deployment-owned,
 payload-free held-out usage and task-quality observations into a compression-host
 promotion manifest. A separate workbench can qualify one bound intent-cache
 operation for shadow observation only; that qualification never serves a cache
-value.
+value. The installed CLI can convert it into a deterministic in-toto Cache
+Admission Passport Statement and inspect exact binding only.
 
 SemWitness is a shadow-mode tool. It does not intercept, replace, or silently rewrite Codex prompts, tool calls, or responses.
 
@@ -79,7 +80,16 @@ If the launcher reports that `dist/cli.mjs` is missing, stop and explain that th
     qualification, and never authorizes serving a cached artifact. Never pass a
     compression-host manifest to this boundary or describe the two workbenches
     as interchangeable.
-15. The plugin cannot transparently replace prompt ingress. Actual token savings
+15. Treat a Cache Admission Passport Statement only as content-free lineage.
+    `authentication: none`, `decision: shadow-qualified`, and
+    `activationCeiling: shadow-only` are invariant. `bound: true` does not
+    authenticate evidence, enforce time/revocation, or authorize serving. Do
+    not add signing keys, approval, canary, or active-cache semantics. Keep the
+    qualification and Statement private: stable HMACs and digests reveal
+    equality and workload shape. A parsed extension is never admitted by the
+    strict content-free profile and must produce `extensionsPresent: true` and
+    `bound: false`.
+16. The plugin cannot transparently replace prompt ingress. Actual token savings
     require a visible Codex SDK/App Server integration or gateway that applies a
     separately admitted candidate before the provider call.
 
@@ -185,6 +195,36 @@ failed one or more gates and no manifest was written. Exit `1` means malformed,
 I/O, no-clobber, or internal failure. The result is content-free,
 `host-attested-unsigned`, and `shadow-only`; it cannot activate cache delivery.
 
+Create a portable Statement from that qualification:
+
+```bash
+node <plugin-root>/scripts/semwitness.mjs intent passport create \
+  --qualification <new-private-shadow-qualification> \
+  --statement-out <new-private-passport.statement.json> \
+  --json
+```
+
+Inspect the Statement against its separate qualification:
+
+```bash
+node <plugin-root>/scripts/semwitness.mjs intent passport inspect \
+  --statement <passport.statement.json> \
+  --qualification <shadow-qualification> \
+  --json
+```
+
+Creation requires the exact canonical qualification artifact, writes exact
+canonical Statement bytes without a trailing newline, prints a receipt rather
+than the Statement, and refuses existing files or symlinks.
+Inspection returns exit `0` when every derived field is bound and no extension
+is present, `2` for a valid mismatch, extended payload, or non-canonical byte
+payload, and `1` for malformed or I/O failure. Distinguish
+`canonicalProfileDigest` from the exact
+`payloadDigest`; only the latter can identify received or future signed bytes.
+The exported DSSE media type is future metadata; this plugin does not sign,
+verify trust, or raise the shadow ceiling. A future DSSE implementation must
+sign `PAE(payloadType, payload)`, not the raw payload alone.
+
 Evaluate a declarative intent normalizer without serving cache values:
 
 ```bash
@@ -250,6 +290,13 @@ mandatory-bypass overhead, phenomenon coverage, truth-table failures, stable
 gate reasons, and whether a shadow qualification was emitted. Do not confuse
 exact-source reuse with semantic reuse, expose case payloads, or imply that a
 qualified shadow manifest can serve a cached artifact.
+
+For Passport creation or inspection, report the Statement path,
+`canonicalProfileDigest`, exact `payloadDigest`, qualification digest,
+`extensionsPresent`, and `bound`. State that the result is unsigned,
+shadow-only, and not an authorization. Do not expose the qualification's scope
+HMACs unless the user explicitly needs artifact-level inspection, and do not
+publish the private artifacts.
 
 For intent evaluation, report exact-intent accuracy, bypass accuracy, unsafe
 accepts, repeatability failures, equivalent-pair convergence, and distinct-pair

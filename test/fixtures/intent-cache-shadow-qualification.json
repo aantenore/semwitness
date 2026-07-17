@@ -1,0 +1,272 @@
+{
+  "activationCeiling": "shadow-only",
+  "adversarial": {
+    "corpusDigest": "sha256:59a2be92d2bb24ab61df23cd088c320a68ab488d479cd0bba259be5cd3defa88",
+    "coverageDigest": "sha256:c3a3091b9d32267d0b3175ee14f70a1e0b3d7292d0a0fa45020ced5fb764d620",
+    "emittedCases": 360,
+    "expectedCases": 360,
+    "failedCases": 0,
+    "minimumCasesPerIntersection": 5,
+    "requiredIntersections": 72,
+    "truthTableViolations": 0,
+    "unexpectedExecutionFailures": 0
+  },
+  "artifact": {
+    "id": "semwitness-intent-cache-shadow-qualifier",
+    "version": "1"
+  },
+  "candidateOrigin": "normalized-intent",
+  "dependencies": {
+    "candidateIndex": {
+      "artifact": {
+        "digest": "sha256:ec7c3bd60e4b40535e889a2000cb9b6f2a55c85b5db7397feb94a6bdff9a4202",
+        "id": "candidate-index",
+        "version": "1"
+      },
+      "status": "enabled"
+    },
+    "determinism": {
+      "artifact": {
+        "digest": "sha256:c4a7d96ac96511d98791c32fbc47d08c6c54e787c03d9379d16eb9cb53e1244e",
+        "id": "determinism",
+        "version": "1"
+      },
+      "status": "enabled"
+    },
+    "embedding": {
+      "artifact": {
+        "digest": "sha256:ca12f191a2c719d9486fb6ad1eb0b8a6ffc2d14c640cc7f052b7ae3315068d10",
+        "id": "embedding",
+        "version": "1"
+      },
+      "status": "enabled"
+    },
+    "freshness": {
+      "artifact": {
+        "digest": "sha256:9e2b4b873aabda85d5b54e98628aaa8621b92696b7e41676c32794427b8bb483",
+        "id": "freshness",
+        "version": "1"
+      },
+      "status": "enabled"
+    },
+    "invalidation": {
+      "artifact": {
+        "digest": "sha256:e94f899bde163cac6e5473bba7d819e5e99d99ccd0d348cf30a029cf3593ad9a",
+        "id": "invalidation",
+        "version": "1"
+      },
+      "status": "enabled"
+    },
+    "key": {
+      "artifact": {
+        "digest": "sha256:bd24723ab694a02d6ff98184b9285080b2d9b0aa8a6e6f7a63854e3305080dc6",
+        "id": "key",
+        "version": "1"
+      },
+      "status": "enabled"
+    },
+    "model": {
+      "artifact": {
+        "digest": "sha256:a8cd0a8d0b1a3e787e1bf0c9b512aa9378c45ecaa9653287c8378c8535de7150",
+        "id": "model",
+        "version": "1"
+      },
+      "status": "enabled"
+    },
+    "output": {
+      "artifact": {
+        "digest": "sha256:cec71ddbeb237cdf06bdeadd7efefa4048ad79483957bec0a8e3ba23d499aeae",
+        "id": "output",
+        "version": "1"
+      },
+      "status": "enabled"
+    },
+    "personalization": {
+      "artifact": {
+        "digest": "sha256:3748ec549557f0d539967cb9bafd20b97ff8b9ea9797f3df0af8c8d6cde15037",
+        "id": "personalization",
+        "version": "1"
+      },
+      "status": "enabled"
+    },
+    "planner": {
+      "artifact": {
+        "digest": "sha256:ce07403dd62eeb7577e82cb963c470d4dcef64fb6281edcdef1e8abfc99d65a1",
+        "id": "planner",
+        "version": "1"
+      },
+      "status": "enabled"
+    },
+    "prompt": {
+      "artifact": {
+        "digest": "sha256:9c7fcafc76171ef44adcc8d1a9d9aceb8927a8bfcea533f22372a59b4c23f022",
+        "id": "prompt",
+        "version": "1"
+      },
+      "status": "enabled"
+    },
+    "provider": {
+      "artifact": {
+        "digest": "sha256:8da37b02c0a19b5f570a45bf6f0beb0b9c1a384b8f1ceb48206dd20783045ae0",
+        "id": "provider",
+        "version": "1"
+      },
+      "status": "enabled"
+    },
+    "recordAuthentication": {
+      "artifact": {
+        "digest": "sha256:592925094f134664d6492cb00f77f7c3a38b130907581aed2314cfc8c9b7358d",
+        "id": "record-authentication",
+        "version": "1"
+      },
+      "status": "enabled"
+    },
+    "safety": {
+      "artifact": {
+        "digest": "sha256:7454fbc2bed8578e1f161e6579178126b0f423a299997de2c827f21800402113",
+        "id": "safety",
+        "version": "1"
+      },
+      "status": "enabled"
+    },
+    "store": {
+      "artifact": {
+        "digest": "sha256:c200ba0b621c037a1dd43ea8e678bf9b16ac54e872676be381fba108f2591575",
+        "id": "store",
+        "version": "1"
+      },
+      "status": "enabled"
+    },
+    "tokenizer": {
+      "artifact": {
+        "digest": "sha256:0e6ef46ac91b5555bca5d967cff19de605d93ab977d09b8352def4d9bc63ec5b",
+        "id": "tokenizer",
+        "version": "1"
+      },
+      "status": "enabled"
+    },
+    "tool": {
+      "artifact": {
+        "digest": "sha256:1765bfce54239de458cc3c4160f33c4616fe89e7964d2096d2bcf04bbdbc2fd9",
+        "id": "tool",
+        "version": "1"
+      },
+      "status": "enabled"
+    }
+  },
+  "deploymentScopeDigest": "sha256:17a2781a3be9dc2ffb03a89efc8d7ce3bac274ed999884539af8889cacfb16fa",
+  "effect": "read",
+  "evidence": {
+    "accountingContractDigest": "sha256:4511dfffc08be5eb8090dbcb161705c1068200ed87e00055b7ac7d2bb72e5096",
+    "costModelDigest": "sha256:7ceff1a68ddd995b2e87790bad3d75edd4bd42da19cf19039af8888851a7f520",
+    "evaluationProtocolDigest": "sha256:e0e454573b2ab9708f6c0d5d2ca2da64e4fc1bea0aebdc2100daf42639af47a0",
+    "evaluatorDigest": "sha256:27f6343f980c4c0ab821d9c72d211d0eb76b0853825cefd80476a05e43cab27e",
+    "oracleDigest": "sha256:9202af6ce925b26ae6b25adfff0b2705147e195fa38dd58ae6ecc58ed263751f",
+    "reportDigest": "sha256:a98c0d89e8c137cc52eb3c6edce2e7de1a248df153aeb18e0bc3efb385a0e228"
+  },
+  "evidenceAuthentication": "none",
+  "intentContract": {
+    "cacheAdmissionPolicyDigest": "sha256:4ff0d5e6422287e6238dc26fc3be753410033f532ed754389727cd119087b56a",
+    "intentIrSchema": "semwitness.dev/intent-ir/v1alpha1",
+    "normalizationPolicyDigest": "sha256:28adc98810a1dd9a3e0e24dfe3dcb4a660714d24ba56dafea9635d6293c84453",
+    "normalizer": {
+      "artifactDigest": "sha256:769adb4ea844d1c262416d89fe176757c7554993af10035fd77e9e5ed8a7ae04",
+      "configDigest": "sha256:4269085675b6456d8b21eff142bb26be5d372935b5856dc3dad6fd05efc0a6d6",
+      "id": "test-normalizer",
+      "version": "1"
+    },
+    "ontology": {
+      "digest": "sha256:c205f711aa5d877300e2cdbcb5d060be2e0de276e525c020356210df8836e8e9",
+      "id": "test-ontology",
+      "version": "1"
+    },
+    "operationRegistry": {
+      "digest": "sha256:6b012192aa50511b481bfab9d0696fff091b7c67ea1c608c47bc4cbbe49ed315",
+      "id": "operation-registry",
+      "version": "1"
+    },
+    "resolver": {
+      "digest": "sha256:439c3635079b57a69aff22860369462fb9330c300fa4dbc70426f087192e369d",
+      "id": "resolver",
+      "version": "1"
+    }
+  },
+  "mandatoryBypassOverhead": {
+    "aggregateCostOverheadRatioPpm": 0,
+    "aggregateLatencyOverheadRatioPpm": 0,
+    "medianCostOverheadRatioPpm": 0,
+    "medianLatencyOverheadRatioPpm": 0
+  },
+  "population": {
+    "attempted": 5998,
+    "bypasses": 2995,
+    "complete": 5998,
+    "corpusDigest": "sha256:9754308b5d99e2e38c9b42e40efddffb80a6a1091e0a91cd7d5b5a986913ad9d",
+    "dropped": 0,
+    "emitted": 5998,
+    "exactSourceWouldHits": 0,
+    "failed": 0,
+    "inclusionPolicyDigest": "sha256:5080558c049f4dec8729c5fd6fcde7be07bc3f65f23e4b88a8f89326eb686d12",
+    "misses": 0,
+    "normalizedIntentWouldHits": 3003,
+    "populationFrameDigest": "sha256:bd30bd76eb18b36d1f435ee3f39183340fc7c92d15bd6de3090b9ffdb0d27697",
+    "samplingProtocolDigest": "sha256:f32cf17576632d48d3f9756144ad8287885c61f457ff3f7837a29d425b38f2e6",
+    "samplingWindowDigest": "sha256:37c334bd69dda6f78b077505cf98917d17441e247b1e73c5bbead565195eef6b",
+    "sourceLogRootDigest": "sha256:f42552a5fa3f61b07391b62eeb93e759e8394fb8254ec14a995abcf42de78039",
+    "uniqueClusters": 5998
+  },
+  "producerIdentity": null,
+  "provenance": "host-attested-unsigned",
+  "schema": "semwitness.dev/intent-cache-shadow-qualification/v1alpha1",
+  "scope": {
+    "cacheNamespace": "hmac-sha256:cache-namespace:3eb587259846000b4f8d017cd0e5dde7d3aa54251ac3b514f16548783ec1cc6b",
+    "domain": "hmac-sha256:intent-domain:3333333333333333333333333333333333333333333333333333333333333333",
+    "operation": {
+      "domain": "hmac-sha256:intent-domain:3333333333333333333333333333333333333333333333333333333333333333",
+      "independentNormalizedIntentWouldHits": 3003,
+      "normalizedIntentCoveragePpm": 1000000,
+      "operation": "hmac-sha256:operation:1111111111111111111111111111111111111111111111111111111111111111",
+      "oraclePermittedEquivalentOpportunities": 3003
+    },
+    "tenant": "hmac-sha256:tenant:4a0e301bce05b37e34079890a48cd98031e7109965542d8f5248251491613134"
+  },
+  "statisticalClaims": {
+    "falseDiscoveryRate": {
+      "ceilingPpm": 1000,
+      "failures": 0,
+      "trials": 3003,
+      "upperBound95Ppm": 998
+    },
+    "falseMissRate": {
+      "missesOrBypasses": 0,
+      "observedRatePpm": 0,
+      "oraclePermittedEquivalentOpportunities": 3003
+    },
+    "unsafeAdmissionRate": {
+      "ceilingPpm": 1000,
+      "failures": 0,
+      "trials": 2995,
+      "upperBound95Ppm": 1000
+    }
+  },
+  "tier": "plan",
+  "validity": {
+    "notAfterEpochMs": 2000,
+    "notBeforeEpochMs": 1000,
+    "revocationId": "hmac-sha256:revocation:4444444444444444444444444444444444444444444444444444444444444444"
+  },
+  "value": {
+    "aggregateNetSavingsRatioPpm": 250333,
+    "criticalIntersections": 8,
+    "criticalIntersectionsDigest": "sha256:0244709f9aca6e8e69231cf493d4f14e87f167646a434e379be47e9adaf18a37",
+    "maximumCaseNetRegressionRatioPpm": 0,
+    "maximumCriticalCaseNetRegressionRatioPpm": 0,
+    "medianNetSavingsRatioPpm": 500000,
+    "minimumCasesPerCriticalIntersection": 5,
+    "minimumCriticalAggregateNetSavingsRatioPpm": 250332,
+    "minimumCriticalMedianNetSavingsRatioPpm": 500000,
+    "minimumCriticalP10NetSavingsRatioPpm": 0,
+    "minimumWouldHitsPerCriticalIntersection": 5,
+    "p10NetSavingsRatioPpm": 0
+  }
+}

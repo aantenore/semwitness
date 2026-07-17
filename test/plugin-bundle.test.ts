@@ -12,12 +12,19 @@ import {
   HOST_PREPARER_ARTIFACT,
   digestHostPromotionCorpus,
 } from '../src/host/index.js';
+import {
+  parseIntentCacheShadowQualificationManifest,
+  serializeIntentCacheShadowQualificationManifest,
+} from '../src/intent-host/index.js';
 import { makePolicy } from './helpers.js';
 import { createEmptyIntentPromotionFixture } from './support/intent-promotion-qualification-fixture.js';
 
 const executeFile = promisify(execFile);
 const pluginRoot = fileURLToPath(
   new URL('../plugins/semwitness/', import.meta.url),
+);
+const intentQualificationFixturePath = fileURLToPath(
+  new URL('./fixtures/intent-cache-shadow-qualification.json', import.meta.url),
 );
 const temporaryRoots = new Set<string>();
 
@@ -222,7 +229,7 @@ describe('bundled Codex plugin', () => {
 
     expect(result).toEqual({
       code: 0,
-      stdout: '0.5.0-alpha.3\n',
+      stdout: '0.5.0-alpha.4\n',
       stderr: '',
     });
   });
@@ -284,6 +291,71 @@ describe('bundled Codex plugin', () => {
       qualified: false,
       report: { activationCeiling: 'shadow-only' },
     });
+  });
+
+  it('ships Passport Statement creation and inspection in the isolated plugin', async () => {
+    const root = await temporaryRoot();
+    const plugin = await copyIsolatedPlugin();
+    const qualificationPath = join(root, 'qualification.json');
+    const statementPath = join(root, 'passport.statement.json');
+    const qualificationFixture = JSON.parse(
+      await readFile(intentQualificationFixturePath, 'utf8'),
+    ) as unknown;
+    await writeFile(
+      qualificationPath,
+      serializeIntentCacheShadowQualificationManifest(
+        parseIntentCacheShadowQualificationManifest(qualificationFixture),
+      ),
+    );
+    const skill = await readFile(plugin.skillPath, 'utf8');
+    const manifest = JSON.parse(
+      await readFile(plugin.manifestPath, 'utf8'),
+    ) as {
+      readonly interface: { readonly defaultPrompt: readonly string[] };
+    };
+    const create = await executeIsolatedBundle(
+      plugin,
+      'intent',
+      'passport',
+      'create',
+      '--qualification',
+      qualificationPath,
+      '--statement-out',
+      statementPath,
+      '--json',
+    );
+    const inspect = await executeIsolatedBundle(
+      plugin,
+      'intent',
+      'passport',
+      'inspect',
+      '--statement',
+      statementPath,
+      '--qualification',
+      qualificationPath,
+      '--json',
+    );
+
+    expect(create).toMatchObject({ code: 0, stderr: '' });
+    expect(JSON.parse(create.stdout)).toMatchObject({
+      schema:
+        'semwitness.dev/intent-cache-admission-passport-creation/v1alpha1',
+      kind: 'creation-only',
+      created: true,
+      activationCeiling: 'shadow-only',
+    });
+    expect(inspect).toMatchObject({ code: 0, stderr: '' });
+    expect(JSON.parse(inspect.stdout)).toMatchObject({
+      bound: true,
+      extensionsPresent: false,
+      canonicalPayload: true,
+    });
+    expect(await readFile(statementPath, 'utf8')).not.toMatch(/\n$/u);
+    expect(skill).toContain('Cache Admission Passport Statement');
+    expect(skill).toContain('`bound: true` does not');
+    expect(manifest.interface.defaultPrompt).toContain(
+      'Create or inspect a shadow-only Cache Admission Passport Statement for this qualification.',
+    );
   });
 
   it('qualifies a valid held-out corpus through the installed launcher', async () => {

@@ -6,7 +6,11 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { runCli } from '../src/entrypoints/cli.js';
-import type { IntentCachePromotionEvidenceFixture } from '../src/intent-host/index.js';
+import {
+  parseIntentCacheShadowQualificationManifest,
+  serializeIntentCacheShadowQualificationManifest,
+  type IntentCachePromotionEvidenceFixture,
+} from '../src/intent-host/index.js';
 import { createEmptyIntentPromotionFixture } from './support/intent-promotion-qualification-fixture.js';
 
 interface CliResult {
@@ -147,5 +151,127 @@ describe('CLI intent-cache promotion workbench', () => {
     expect(workbench.report.gateReasons.length).toBeGreaterThan(0);
     expect(workbench).not.toHaveProperty('qualification');
     await expectMissing(manifestPath);
+  });
+
+  it('documents Passport Statement creation and binding inspection only', async () => {
+    const create = await invoke('intent', 'passport', 'create', '--help');
+    expect(create).toMatchObject({ code: 0, stderr: '' });
+    expect(create.stdout).toContain(
+      'semwitness intent passport create [options]',
+    );
+    expect(create.stdout).toContain('--qualification <file>');
+    expect(create.stdout).toContain('--statement-out <file>');
+    expect(create.stdout).not.toMatch(/--(?:key|sign|approve|policy)/u);
+
+    const inspect = await invoke('intent', 'passport', 'inspect', '--help');
+    expect(inspect).toMatchObject({ code: 0, stderr: '' });
+    expect(inspect.stdout).toContain(
+      'semwitness intent passport inspect [options]',
+    );
+    expect(inspect.stdout).toContain('--statement <file>');
+    expect(inspect.stdout).toContain('--qualification <file>');
+    expect(inspect.stdout).not.toMatch(/--(?:key|sign|approve|policy)/u);
+  });
+
+  it('rejects malformed qualification bytes without creating a Statement', async () => {
+    const root = await temporaryRoot();
+    const qualificationPath = join(root, 'malformed-qualification.json');
+    const statementPath = join(root, 'passport.statement.json');
+    await writeFile(qualificationPath, '{"schema":"wrong"}\n');
+
+    const result = await invoke(
+      'intent',
+      'passport',
+      'create',
+      '--qualification',
+      qualificationPath,
+      '--statement-out',
+      statementPath,
+      '--json',
+    );
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(JSON.parse(result.stderr)).toMatchObject({
+      schema: 'semwitness.dev/cli-error/v1alpha1',
+      ok: false,
+      error: { reason: 'MALFORMED_ENVELOPE' },
+    });
+    await expectMissing(statementPath);
+  });
+
+  it('rejects a valid qualification that is not the exact canonical artifact', async () => {
+    const root = await temporaryRoot();
+    const qualificationPath = join(root, 'formatted-qualification.json');
+    const statementPath = join(root, 'passport.statement.json');
+    const fixture = await readFile(
+      new URL(
+        './fixtures/intent-cache-shadow-qualification.json',
+        import.meta.url,
+      ),
+      'utf8',
+    );
+    await writeFile(qualificationPath, `${fixture.trim()}\n`);
+
+    const result = await invoke(
+      'intent',
+      'passport',
+      'create',
+      '--qualification',
+      qualificationPath,
+      '--statement-out',
+      statementPath,
+      '--json',
+    );
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(JSON.parse(result.stderr)).toMatchObject({
+      error: { reason: 'MALFORMED_ENVELOPE' },
+    });
+    await expectMissing(statementPath);
+  });
+
+  it('rejects a BOM-prefixed canonical qualification without creating a Statement', async () => {
+    const root = await temporaryRoot();
+    const qualificationPath = join(root, 'bom-qualification.json');
+    const statementPath = join(root, 'passport.statement.json');
+    const fixture = JSON.parse(
+      await readFile(
+        new URL(
+          './fixtures/intent-cache-shadow-qualification.json',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    ) as unknown;
+    const canonical = serializeIntentCacheShadowQualificationManifest(
+      parseIntentCacheShadowQualificationManifest(fixture),
+    );
+    await writeFile(
+      qualificationPath,
+      Buffer.concat([
+        Buffer.from([0xef, 0xbb, 0xbf]),
+        Buffer.from(canonical, 'utf8'),
+      ]),
+    );
+
+    const result = await invoke(
+      'intent',
+      'passport',
+      'create',
+      '--qualification',
+      qualificationPath,
+      '--statement-out',
+      statementPath,
+      '--json',
+    );
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(JSON.parse(result.stderr)).toMatchObject({
+      error: { reason: 'MALFORMED_ENVELOPE' },
+    });
+    await expectMissing(statementPath);
   });
 });

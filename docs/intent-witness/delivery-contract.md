@@ -1,11 +1,13 @@
 # Delivery contract: IntentWitness shadow MVP
 
-- Date: 2026-07-15
+- Date: 2026-07-17
 - Parent project: SemWitness
 - Status: implemented alpha, shadow-only
 - Schema IDs: `semwitness.dev/intent-ir/v1alpha1`,
   `semwitness.dev/normalization-witness/v1alpha1`, and
   `semwitness.dev/cache-hit-witness/v1alpha1`
+- Attestation TypeURI:
+  `https://github.com/aantenore/semwitness/blob/main/docs/attestations/cache-admission-passport/v0.1.md`
 
 ## Decision
 
@@ -104,6 +106,24 @@ Must:
 - Require `--compiler-config` and `--allow-network` together in the CLI. Before
   constructing the compiler, calculate selected fixture cases × runs and reject
   work above the bounded `--max-requests` budget (default 100).
+- Derive a deterministic in-toto Passport Statement from one parsed shadow
+  qualification without accepting caller-supplied issuer, approval, policy,
+  timestamp, or authorization facts.
+- Emit both qualification and Statement files as their exact canonical UTF-8
+  bytes without a trailing line feed, so the subject and payload digests are
+  reproducible from the artifacts themselves.
+- Keep the Passport structurally `authentication: none`,
+  `decision: shadow-qualified`, and `activationCeiling: shadow-only`; binding
+  verification may return only `bound` and content-free digests. Bounded
+  in-toto extensions may parse monotonically, but their presence must make the
+  stricter content-free binding false.
+- Distinguish the extension-eliding `canonicalProfileDigest` from the exact
+  supplied-byte `payloadDigest`; only the latter may identify an exact received,
+  signed, or future receipt-bound payload.
+- Ship Passport creation and binding inspection through the package export,
+  Node CLI, and bundled Codex plugin with bounded parsing and private
+  no-clobber file output. Creation stdout is a receipt only and never echoes the
+  Statement or its stable scope HMACs.
 
 Should, after the current alpha:
 
@@ -174,6 +194,11 @@ promotion of `observation` or `response`.
 | IW22 | Consensus fail-closed     | Two to eight distinct-manifest members with one ontology must all return the same valid unambiguous operation; every mixed, failed, bypassed, malformed, or aborted outcome bypasses                              | Consensus unit and mutation tests                  |
 | IW23 | Explicit network budget   | Network evaluation requires config plus opt-in, rejects unknown/secret-valued bindings, and checks selected cases × runs against the request budget before compiler construction                                  | CLI mocked-network tests                           |
 | IW24 | Curated corpus accounting | The checked-in corpus contains exactly 96 intent cases, 24 safety bypasses, 48 equivalent pairs, and 96 distinct pairs, while reports label all pair statistics non-IID                                           | Corpus invariant and report tests                  |
+| IW25 | Passport derivation       | One exact canonical qualification file produces byte-deterministic in-toto Statement v1 output with no trailing LF; its single subject and every predicate field are derived from that manifest                   | Golden, mutation, file-digest, and binding tests   |
+| IW26 | Passport honesty          | The Statement and API expose no issuer, approval, live/canary decision, candidate, value, or serving path; authentication remains none and activation ceiling remains shadow-only                                 | Public API, JSON, and privacy snapshots            |
+| IW27 | Passport boundary         | Strict bounded JSON rejects ambiguity and data-bearing object tricks; monotonic extensions parse but always produce `extensionsPresent: true` and `bound: false` under the content-free policy                    | Parser, Proxy/accessor, and extension tests        |
+| IW28 | Passport delivery         | Installed package and isolated Codex plugin execute `intent passport create/inspect`; files are private/no-clobber, creation stdout is receipt-only, and CLI exit `0/2/1` remains stable                          | Pack-install, plugin, and CLI integration tests    |
+| IW29 | Passport byte identity    | RFC 3339 validity is canonical; `payloadDigest` commits exact supplied bytes while `canonicalProfileDigest` identifies only the extension-eliding supported profile; non-canonical byte payloads never bind       | Timestamp, extension, and exact-byte tests         |
 
 `IW14` uses a predeclared binomial confidence method such as one-sided Wilson or
 Clopper-Pearson. Reporting zero observed errors without enough eligible

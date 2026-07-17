@@ -336,7 +336,10 @@ events to authorized readers, so access and retention remain deployment policy.
 The private evidence file also contains unkeyed high-entropy intent, value, and
 witness digests from the base envelopes; these reveal equality and may be
 guessable if an upstream artifact has low entropy. Reports and manifests do not
-copy the full envelopes.
+copy the full envelopes. Qualification and Passport files therefore require
+owner-only mode `0600`, deployment ACLs, and explicit retention. Do not publish
+them as logs, ordinary CI artifacts, issue attachments, or release assets:
+stable HMACs and digests still disclose equality and workload shape.
 
 The report declares:
 
@@ -444,7 +447,38 @@ Exit `0` means qualified. Exit `2` means well-formed evidence failed a gate,
 including observed unsafe hits, population failures, or adversarial truth-table
 violations. Exit `1` is reserved for malformed schema, tampering/internal
 inconsistency, internal errors, or I/O failure. Existing output files and
-symlinks are refused. No output manifest is created on exit `1` or `2`.
+symlinks are refused. No output manifest is created on exit `1` or `2`. A
+successful manifest file is its exact canonical UTF-8 serialization with no
+trailing line feed; its digest can therefore be reproduced directly from the
+file bytes.
+
+Once emitted, the manifest can be converted into a deterministic, content-free
+in-toto Passport Statement v1 with the repository-controlled
+[`v0.1` predicate](../attestations/cache-admission-passport/v0.1.md) and checked
+against the separate manifest:
+
+```bash
+semwitness intent passport create \
+  --qualification <new-private-shadow-qualification.json> \
+  --statement-out <new-private-passport.statement.json> \
+  --json
+
+semwitness intent passport inspect \
+  --statement <new-private-passport.statement.json> \
+  --qualification <new-private-shadow-qualification.json> \
+  --json
+```
+
+The Statement file is also exact canonical UTF-8 without a trailing line feed.
+Creation stdout is a receipt only; it never echoes the Statement or its scope
+HMACs. The inspector distinguishes exact `payloadDigest` from the
+extension-eliding `canonicalProfileDigest`. Bounded in-toto extensions may
+parse, but their presence sets `extensionsPresent: true` and `bound: false`.
+
+This is a lineage and binding boundary only. `bound: true` does not authenticate
+the evidence, enforce the copied RFC 3339 validity or revocation claims, or
+authorize a cache hit. See the [Cache Admission Passport Statement
+contract](cache-admission-passport.md).
 
 ## Scope
 
@@ -462,6 +496,11 @@ Must:
 
 Should, after this tranche:
 
+- Add an external DSSE trust/revocation verifier and a separately authenticated
+  approval envelope without changing the Passport's shadow-only meaning. DSSE
+  must verify `PAE(payloadType, payload)`, authenticating both the declared type
+  and exact payload bytes; the normalized profile digest is not a substitute.
+- Define a short-lived per-entry Admission Receipt before any active adapter.
 - Add authenticated immutable cache records and a `TierStore` port.
 - Add a read-only shadow runtime that emits this evidence without exposing
   candidate values.

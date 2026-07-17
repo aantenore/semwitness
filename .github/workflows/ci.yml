@@ -59,19 +59,48 @@ jobs:
             "$package_path"
           "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" --version
           "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" --help
+          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" intent passport create --help
+          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" intent passport inspect --help
           test -f "$RUNNER_TEMP/semwitness-install/node_modules/semwitness/dist/intent-host/index.js"
           test -f "$RUNNER_TEMP/semwitness-install/node_modules/semwitness/dist/intent-host/index.d.ts"
           cd "$RUNNER_TEMP/semwitness-install"
+          QUALIFICATION_SOURCE="$GITHUB_WORKSPACE/test/fixtures/intent-cache-shadow-qualification.json" \
+          QUALIFICATION_OUT="$RUNNER_TEMP/installed-qualification.json" \
+          node --input-type=module -e '
+            const fs = await import("node:fs");
+            const api = await import("semwitness/intent/host");
+            const source = JSON.parse(fs.readFileSync(process.env.QUALIFICATION_SOURCE, "utf8"));
+            const qualification = api.parseIntentCacheShadowQualificationManifest(source);
+            fs.writeFileSync(
+              process.env.QUALIFICATION_OUT,
+              api.serializeIntentCacheShadowQualificationManifest(qualification)
+            );
+          '
+          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" intent passport create \
+            --qualification "$RUNNER_TEMP/installed-qualification.json" \
+            --statement-out "$RUNNER_TEMP/installed-passport.statement.json" \
+            --json
+          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" intent passport inspect \
+            --statement "$RUNNER_TEMP/installed-passport.statement.json" \
+            --qualification "$RUNNER_TEMP/installed-qualification.json" \
+            --json
+          test -s "$RUNNER_TEMP/installed-passport.statement.json"
           node --input-type=module -e '
             const api = await import("semwitness/intent/host");
             for (const name of [
               "parseIntentCacheShadowQualificationManifest",
+              "serializeIntentCacheShadowQualificationManifest",
               "digestIntentCacheShadowQualificationManifest",
               "evaluateIntentCachePromotionEvidence",
               "parseIntentCachePromotionEvidenceJsonl",
               "parseIntentCacheOperationBinding",
               "parseIntentCacheLookupReceipt",
-              "parseIntentNormalizationBypassReceipt"
+              "parseIntentNormalizationBypassReceipt",
+              "createIntentCacheAdmissionPassportStatement",
+              "parseIntentCacheAdmissionPassportStatement",
+              "serializeIntentCacheAdmissionPassportStatement",
+              "digestIntentCacheAdmissionPassportCanonicalProfile",
+              "verifyIntentCacheAdmissionPassportStatementBinding"
             ]) {
               if (typeof api[name] !== "function") throw new Error(`missing ${name}`);
             }

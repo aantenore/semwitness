@@ -1,7 +1,7 @@
-import { toJsonValue } from '../domain/canonical-json.js';
+import { canonicalJson, toJsonValue } from '../domain/canonical-json.js';
 import { SemWitnessError } from '../domain/errors.js';
 import { zeroFailureGateUpperBound95Ppm } from '../eval/binomial.js';
-import { hashCanonical, isSha256Digest } from '../domain/hash.js';
+import { isSha256Digest, sha256 } from '../domain/hash.js';
 import {
   SAFE_IDENTIFIER_PATTERN,
   SAFE_VERSION_PATTERN,
@@ -215,7 +215,14 @@ export function parseIntentCacheShadowQualificationManifest(
 export function digestIntentCacheShadowQualificationManifest(
   value: unknown,
 ): Sha256Digest {
-  return hashCanonical(
+  return sha256(serializeIntentCacheShadowQualificationManifest(value));
+}
+
+/** Exact canonical UTF-8 artifact bytes, without a trailing newline. */
+export function serializeIntentCacheShadowQualificationManifest(
+  value: unknown,
+): string {
+  return canonicalJson(
     toJsonValue(parseIntentCacheShadowQualificationManifest(value)),
   );
 }
