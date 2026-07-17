@@ -37,8 +37,13 @@ export const OPENAI_COMPATIBLE_INTENT_CONFIG_SCHEMA =
 
 const COMPILER_ID = 'openai-compatible-intent-compiler';
 const COMPILER_VERSION = '0.1.0';
+export const OPENAI_COMPATIBLE_INTENT_RUNTIME_VERSIONS = Object.freeze({
+  ai: '7.0.22',
+  openaiCompatible: '3.0.7',
+  zod: '4.4.3',
+} as const);
 const COMPILER_ARTIFACT_DIGEST = sha256(
-  'semwitness.dev/openai-compatible-intent-compiler/v1\0ai:7.0.17\0openai-compatible:3.0.5\0zod:4.4.3',
+  `semwitness.dev/openai-compatible-intent-compiler/v1\0ai:${OPENAI_COMPATIBLE_INTENT_RUNTIME_VERSIONS.ai}\0openai-compatible:${OPENAI_COMPATIBLE_INTENT_RUNTIME_VERSIONS.openaiCompatible}\0zod:${OPENAI_COMPATIBLE_INTENT_RUNTIME_VERSIONS.zod}`,
 );
 const CATALOG_SCHEMA =
   'semwitness.dev/openai-compatible-intent-catalog/v1' as const;
