@@ -13,6 +13,7 @@ export interface CompactResponseRenderer {
   readonly outputMediaType: string;
   readonly locales: readonly string[];
   render(
+    this: void,
     candidate: JsonValue,
     context: CompactResponseRendererContext,
   ): string | Uint8Array | Promise<string | Uint8Array>;

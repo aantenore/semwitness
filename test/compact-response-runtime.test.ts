@@ -387,4 +387,39 @@ describe('compact response runtime', () => {
     expect(slowRenderer).toHaveBeenCalledOnce();
     expect(tokenizerCount).not.toHaveBeenCalled();
   });
+
+  it('does not start the rendered token count after the first count exhausts the deadline', async () => {
+    const { contractSource, candidate } = await fixture();
+    const timeoutWire = JSON.parse(contractSource) as {
+      limits: { maxRenderMs: number };
+    };
+    timeoutWire.limits.maxRenderMs = 100;
+    const count = vi.fn(async (bytes: Uint8Array) => {
+      const startedAt = performance.now();
+      let spins = 0;
+      while (performance.now() - startedAt < 150) spins += 1;
+      return {
+        tokens: bytes.byteLength + spins - spins,
+        reliability: 'exact' as const,
+      };
+    });
+    const result = await createCompactResponseRuntime({
+      renderers: [createChangeReportMarkdownRenderer()],
+      tokenizer: {
+        id: exactTokenizer.id,
+        fingerprint: exactTokenizer.fingerprint,
+        count,
+      },
+      preparationTimeoutMs: 100,
+    }).render({
+      contract: parseCompactResponseContract(JSON.stringify(timeoutWire)),
+      candidate,
+    });
+
+    expect(result).toEqual({
+      status: 'retry-required',
+      reasons: ['RENDER_TIMEOUT'],
+    });
+    expect(count).toHaveBeenCalledOnce();
+  });
 });

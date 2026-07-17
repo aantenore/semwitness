@@ -212,26 +212,33 @@ async function renderWithSnapshots(
     | undefined;
   if (tokenizer !== undefined) {
     try {
-      const counted = await beforeDeadline(
+      const candidateCount = await beforeDeadline(
         () =>
-          Promise.all([
-            tokenizer.count(
-              new Uint8Array(candidate.bytes),
-              contract.candidate.mediaType,
-            ),
-            tokenizer.count(
-              new Uint8Array(output.bytes),
-              contract.renderer.outputMediaType,
-            ),
-          ]),
+          tokenizer.count(
+            new Uint8Array(candidate.bytes),
+            contract.candidate.mediaType,
+          ),
         remainingMs(startedAt, deadlineMs),
       );
-      if (counted === TIMEOUT) {
+      if (candidateCount === TIMEOUT) {
         abortController.abort();
         return retry('RENDER_TIMEOUT');
       }
-      const [candidateCount, renderedCount] = counted;
-      if (!isTokenCount(candidateCount) || !isTokenCount(renderedCount)) {
+      if (!isTokenCount(candidateCount)) return retry('TOKENIZER_ERROR');
+
+      const renderedCount = await beforeDeadline(
+        () =>
+          tokenizer.count(
+            new Uint8Array(output.bytes),
+            contract.renderer.outputMediaType,
+          ),
+        remainingMs(startedAt, deadlineMs),
+      );
+      if (renderedCount === TIMEOUT) {
+        abortController.abort();
+        return retry('RENDER_TIMEOUT');
+      }
+      if (!isTokenCount(renderedCount)) {
         return retry('TOKENIZER_ERROR');
       }
       tokenCounts = Object.freeze({
