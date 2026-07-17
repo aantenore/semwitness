@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { performance } from 'node:perf_hooks';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -175,6 +176,32 @@ describe('compact response runtime', () => {
       status: 'retry-required',
       reasons: ['RENDER_OUTPUT_TOO_LARGE'],
     });
+
+    const oversizedBytes = new Uint8Array(contract.limits.maxRenderedBytes + 1);
+    oversizedBytes.fill(0x78);
+    Object.defineProperty(oversizedBytes, 'byteLength', { value: 1 });
+    expect(
+      await runtime({
+        ...base,
+        render: () => oversizedBytes,
+      }).render({ contract, candidate }),
+    ).toEqual({
+      status: 'retry-required',
+      reasons: ['RENDER_OUTPUT_TOO_LARGE'],
+    });
+
+    const validBytes = new TextEncoder().encode('safe output');
+    Object.defineProperty(validBytes, Symbol.iterator, {
+      value() {
+        throw new Error('caller-controlled iterator must not run');
+      },
+    });
+    await expect(
+      runtime({ ...base, render: () => validBytes }).render({
+        contract,
+        candidate,
+      }),
+    ).resolves.toMatchObject({ status: 'rendered' });
   });
 
   it('snapshots candidate bytes before asynchronous rendering', async () => {
@@ -223,7 +250,7 @@ describe('compact response runtime', () => {
     });
   });
 
-  it('snapshots registration fields once and rejects duplicate or throwing registrations', () => {
+  it('snapshots registration fields once and rejects duplicate or throwing registrations', async () => {
     const base = createChangeReportMarkdownRenderer();
     expect(() =>
       createCompactResponseRuntime({ renderers: [base, base] }),
@@ -242,5 +269,122 @@ describe('compact response runtime', () => {
     ).toThrowError(
       expect.objectContaining({ code: 'RENDERER_BINDING_MISMATCH' }),
     );
+
+    const { contractSource, candidate } = await fixture();
+    let idReads = 0;
+    const unstable = new Proxy(
+      { ...base },
+      {
+        get(target, property, receiver) {
+          if (property === 'id') {
+            idReads += 1;
+            return idReads === 1 ? 'decoy-renderer' : target.id;
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      },
+    );
+    const decoyWire = JSON.parse(contractSource) as {
+      renderer: { id: string };
+    };
+    decoyWire.renderer.id = 'decoy-renderer';
+    const decoyContract = parseCompactResponseContract(
+      JSON.stringify(decoyWire),
+    );
+    const snapshotted = createCompactResponseRuntime({
+      renderers: [base, unstable],
+    });
+    await expect(
+      snapshotted.render({ contract: decoyContract, candidate }),
+    ).resolves.toMatchObject({ status: 'rendered' });
+    expect(idReads).toBe(1);
+
+    const registry = [base];
+    Object.defineProperty(registry, 'map', {
+      value() {
+        throw new Error('caller-controlled map must not run');
+      },
+    });
+    await expect(
+      createCompactResponseRuntime({ renderers: registry }).render({
+        contract: parseCompactResponseContract(contractSource),
+        candidate,
+      }),
+    ).resolves.toMatchObject({ status: 'rendered' });
+
+    const locales = ['en'];
+    Object.defineProperty(locales, Symbol.iterator, {
+      value() {
+        throw new Error('caller-controlled locale iterator must not run');
+      },
+    });
+    await expect(
+      createCompactResponseRuntime({
+        renderers: [{ ...base, locales }],
+      }).render({
+        contract: parseCompactResponseContract(contractSource),
+        candidate,
+      }),
+    ).resolves.toMatchObject({ status: 'rendered' });
+  });
+
+  it('does not start renderer or tokenizer work after the total deadline', async () => {
+    const { contractSource, candidate } = await fixture();
+    const base = createChangeReportMarkdownRenderer();
+    const largeWire = JSON.parse(contractSource) as {
+      candidate: { schema: unknown };
+      limits: {
+        maxCandidateBytes: number;
+        maxStringCodeUnits: number;
+        maxRenderMs: number;
+      };
+    };
+    largeWire.candidate.schema = {
+      type: 'string',
+      minLength: 1,
+      maxLength: 1024 * 1024,
+    };
+    largeWire.limits.maxCandidateBytes = 1024 * 1024 + 16;
+    largeWire.limits.maxStringCodeUnits = 1024 * 1024;
+    largeWire.limits.maxRenderMs = 1;
+    const render = vi.fn(base.render);
+    const expiredBeforeRender = await createCompactResponseRuntime({
+      renderers: [{ ...base, render }],
+      preparationTimeoutMs: 1,
+    }).render({
+      contract: parseCompactResponseContract(JSON.stringify(largeWire)),
+      candidate: JSON.stringify('x'.repeat(1024 * 1024)),
+    });
+    expect(expiredBeforeRender).toEqual({
+      status: 'retry-required',
+      reasons: ['RENDER_TIMEOUT'],
+    });
+    expect(render).not.toHaveBeenCalled();
+
+    const timeoutWire = JSON.parse(contractSource) as {
+      limits: { maxRenderMs: number };
+    };
+    timeoutWire.limits.maxRenderMs = 1;
+    const tokenizerCount = vi.fn(exactTokenizer.count);
+    const slowRenderer = vi.fn(() => {
+      const startedAt = performance.now();
+      let spins = 0;
+      while (performance.now() - startedAt < 8) spins += 1;
+      return `safe output ${spins}`;
+    });
+    const expiredAfterRender = await createCompactResponseRuntime({
+      renderers: [{ ...base, render: slowRenderer }],
+      tokenizer: { ...exactTokenizer, count: tokenizerCount },
+      preparationTimeoutMs: 1,
+    }).render({
+      contract: parseCompactResponseContract(JSON.stringify(timeoutWire)),
+      candidate,
+    });
+    expect(expiredAfterRender).toEqual({
+      status: 'retry-required',
+      reasons: ['RENDER_TIMEOUT'],
+    });
+    expect(slowRenderer).toHaveBeenCalledOnce();
+    expect(tokenizerCount).not.toHaveBeenCalled();
   });
 });

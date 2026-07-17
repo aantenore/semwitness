@@ -360,6 +360,29 @@ describe('compact response candidate', () => {
     );
   });
 
+  it('does not trust typed-array byteLength or iterator overrides', () => {
+    const text = JSON.stringify(candidateValue());
+    const oversized = new TextEncoder().encode(text);
+    Object.defineProperty(oversized, 'byteLength', { value: 1 });
+    const byteBound = parsedContract(
+      (value) => (value.limits.maxCandidateBytes = text.length - 1),
+    );
+    expectCode(
+      () => parseCompactResponseCandidate(oversized, byteBound),
+      'CANDIDATE_LIMIT_EXCEEDED',
+    );
+
+    const valid = new TextEncoder().encode(text);
+    Object.defineProperty(valid, Symbol.iterator, {
+      value() {
+        throw new Error('caller-controlled iterator must not run');
+      },
+    });
+    expect(
+      parseCompactResponseCandidate(valid, parsedContract()).value,
+    ).toEqual(candidateValue());
+  });
+
   it.each([
     { ...candidateValue(), extra: true },
     { ...candidateValue(), status: 'invalid' },

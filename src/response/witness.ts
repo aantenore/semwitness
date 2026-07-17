@@ -1,3 +1,5 @@
+import { Buffer } from 'node:buffer';
+
 import {
   canonicalJson,
   toJsonValue,
@@ -15,6 +17,7 @@ import {
   type TokenCount,
 } from '../ports/tokenizer.js';
 import { CompactResponseError } from './errors.js';
+import { snapshotBoundedUint8Array } from './byte-snapshot.js';
 
 export const COMPACT_RESPONSE_WITNESS_SCHEMA =
   'semwitness.dev/compact-response-witness/v1alpha1' as const;
@@ -109,7 +112,13 @@ export function serializeCompactResponseWitness(
 export function parseCompactResponseWitness(
   source: string | Uint8Array,
 ): CompactResponseWitness {
-  const text = decodeExactUtf8(source, MAX_WITNESS_BYTES);
+  let text: string;
+  try {
+    text = decodeExactUtf8(source, MAX_WITNESS_BYTES);
+  } catch (error) {
+    if (error instanceof CompactResponseError) throw error;
+    throw malformedWitness(error);
+  }
   let value: JsonValue;
   try {
     value = parseStrictJson(text, {
@@ -377,19 +386,22 @@ function isSafeVersion(value: unknown): value is string {
 
 function decodeExactUtf8(source: string | Uint8Array, limit: number): string {
   if (typeof source === 'string') {
-    const bytes = new TextEncoder().encode(source);
-    if (bytes.byteLength > limit || !isWellFormedUnicode(source)) {
+    if (
+      source.length > limit ||
+      !isWellFormedUnicode(source) ||
+      Buffer.byteLength(source, 'utf8') > limit
+    ) {
       throw malformedWitness();
     }
     return source;
   }
-  const snapshot = new Uint8Array(source);
-  if (snapshot.byteLength > limit) throw malformedWitness();
+  const bounded = snapshotBoundedUint8Array(source, limit);
+  if (bounded.status !== 'ok') throw malformedWitness();
   try {
     return new TextDecoder('utf-8', {
       fatal: true,
       ignoreBOM: true,
-    }).decode(snapshot);
+    }).decode(bounded.bytes);
   } catch (error) {
     throw malformedWitness(error);
   }

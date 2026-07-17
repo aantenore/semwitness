@@ -56,6 +56,29 @@ describe('compact response witness', () => {
         code: 'WITNESS_MALFORMED',
       }),
     );
+    expect(() =>
+      parseCompactResponseWitness({ length: 1_000_000_000 } as never),
+    ).toThrowError(
+      expect.objectContaining<Partial<CompactResponseError>>({
+        code: 'WITNESS_MALFORMED',
+      }),
+    );
+
+    const oversized = new Uint8Array(64 * 1024 + 1);
+    Object.defineProperty(oversized, 'byteLength', { value: 1 });
+    expect(() => parseCompactResponseWitness(oversized)).toThrowError(
+      expect.objectContaining<Partial<CompactResponseError>>({
+        code: 'WITNESS_MALFORMED',
+      }),
+    );
+
+    const exactBytes = new TextEncoder().encode(wire);
+    Object.defineProperty(exactBytes, Symbol.iterator, {
+      value() {
+        throw new Error('caller-controlled iterator must not run');
+      },
+    });
+    expect(parseCompactResponseWitness(exactBytes)).toEqual(rendered.witness);
   });
 
   it('binds the exact candidate bytes, canonical payload and output', async () => {
@@ -70,6 +93,20 @@ describe('compact response witness', () => {
         witness,
       }),
     ).resolves.toEqual({ bound: true, reasons: [] });
+    const exactWithThrowingExtra = Object.defineProperty(
+      { contract, candidate, rendered: rendered.output, witness },
+      'extra',
+      {
+        enumerable: true,
+        get() {
+          throw new Error('unrelated getter must not be read');
+        },
+      },
+    );
+    await expect(runtime.verify(exactWithThrowingExtra)).resolves.toEqual({
+      bound: true,
+      reasons: [],
+    });
     await expect(
       runtime.replay({ contract, candidate, witness }),
     ).resolves.toEqual({ bound: true, reasons: [] });

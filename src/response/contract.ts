@@ -1,3 +1,5 @@
+import { Buffer } from 'node:buffer';
+
 import {
   canonicalJson,
   immutableJson,
@@ -25,6 +27,7 @@ import {
   type CompactResponseLimits,
   type ParsedCompactResponseCandidate,
 } from './types.js';
+import { snapshotBoundedUint8Array } from './byte-snapshot.js';
 
 export const MAX_COMPACT_RESPONSE_CONTRACT_BYTES = 4 * 1024 * 1024;
 export const SAFE_COMPACT_RESPONSE_LOCALE_PATTERN =
@@ -134,34 +137,8 @@ export function parseCompactResponseCandidate(
   let bytes: Uint8Array;
   try {
     bytes = copyExactUtf8(source, contract.limits.maxCandidateBytes);
-  } catch {
-    const length =
-      typeof source === 'string'
-        ? undefined
-        : source instanceof Uint8Array
-          ? source.byteLength
-          : undefined;
-    if (length !== undefined && length > contract.limits.maxCandidateBytes) {
-      throw candidateLimitExceeded();
-    }
-    if (typeof source === 'string') {
-      try {
-        assertWellFormedUnicode(source, 'Compact response candidate');
-        if (
-          new TextEncoder().encode(source).byteLength >
-          contract.limits.maxCandidateBytes
-        ) {
-          throw candidateLimitExceeded();
-        }
-      } catch (error) {
-        if (
-          error instanceof CompactResponseError &&
-          error.code === 'CANDIDATE_LIMIT_EXCEEDED'
-        ) {
-          throw error;
-        }
-      }
-    }
+  } catch (error) {
+    if (error instanceof RangeError) throw candidateLimitExceeded();
     throw candidateMalformed();
   }
 
@@ -270,15 +247,23 @@ function copyExactUtf8(
 ): Uint8Array {
   let bytes: Uint8Array;
   if (typeof source === 'string') {
+    if (source.length > maximumBytes) {
+      throw new RangeError('Compact response JSON exceeds its byte limit');
+    }
     assertWellFormedUnicode(source, 'Compact response JSON');
+    if (Buffer.byteLength(source, 'utf8') > maximumBytes) {
+      throw new RangeError('Compact response JSON exceeds its byte limit');
+    }
     bytes = new TextEncoder().encode(source);
-  } else if (source instanceof Uint8Array) {
-    bytes = new Uint8Array(source);
   } else {
-    throw new TypeError('Compact response JSON must be text or bytes');
-  }
-  if (bytes.byteLength > maximumBytes) {
-    throw new RangeError('Compact response JSON exceeds its byte limit');
+    const snapshot = snapshotBoundedUint8Array(source, maximumBytes);
+    if (snapshot.status === 'too-large') {
+      throw new RangeError('Compact response JSON exceeds its byte limit');
+    }
+    if (snapshot.status === 'invalid') {
+      throw new TypeError('Compact response JSON must be text or bytes');
+    }
+    bytes = snapshot.bytes;
   }
   return bytes;
 }

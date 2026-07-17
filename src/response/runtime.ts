@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { performance } from 'node:perf_hooks';
 
 import {
@@ -32,6 +33,7 @@ import {
   serializeCompactResponseWitness,
   type CompactResponseWitness,
 } from './witness.js';
+import { snapshotBoundedUint8Array } from './byte-snapshot.js';
 
 const SAFE_LOCALE_PATTERN = /^[a-z]{2,3}(?:-[A-Z]{2})?$/u;
 const MAX_REGISTERED_RENDERERS = 256;
@@ -173,12 +175,11 @@ async function renderWithSnapshots(
   let renderedValue: string | Uint8Array;
   try {
     const rendered = await beforeDeadline(
-      Promise.resolve().then(() =>
+      () =>
         renderer.render(candidate.value, {
           locale: contract.renderer.locale,
           signal: abortController.signal,
         }),
-      ),
       remainingMs(startedAt, deadlineMs),
     );
     if (rendered === TIMEOUT) {
@@ -196,6 +197,10 @@ async function renderWithSnapshots(
     contract.limits.maxRenderedBytes,
   );
   if ('reason' in output) return retry(output.reason);
+  if (remainingMs(startedAt, deadlineMs) <= 0) {
+    abortController.abort();
+    return retry('RENDER_TIMEOUT');
+  }
 
   let tokenCounts:
     | {
@@ -208,16 +213,17 @@ async function renderWithSnapshots(
   if (tokenizer !== undefined) {
     try {
       const counted = await beforeDeadline(
-        Promise.all([
-          tokenizer.count(
-            new Uint8Array(candidate.bytes),
-            contract.candidate.mediaType,
-          ),
-          tokenizer.count(
-            new Uint8Array(output.bytes),
-            contract.renderer.outputMediaType,
-          ),
-        ]),
+        () =>
+          Promise.all([
+            tokenizer.count(
+              new Uint8Array(candidate.bytes),
+              contract.candidate.mediaType,
+            ),
+            tokenizer.count(
+              new Uint8Array(output.bytes),
+              contract.renderer.outputMediaType,
+            ),
+          ]),
         remainingMs(startedAt, deadlineMs),
       );
       if (counted === TIMEOUT) {
@@ -240,6 +246,10 @@ async function renderWithSnapshots(
   }
 
   try {
+    if (remainingMs(startedAt, deadlineMs) <= 0) {
+      abortController.abort();
+      return retry('RENDER_TIMEOUT');
+    }
     const witness = createCompactResponseWitness({
       contractDigest: digestCompactResponseContract(contract),
       candidate: {
@@ -260,6 +270,10 @@ async function renderWithSnapshots(
       },
       ...(tokenCounts === undefined ? {} : { tokenCounts }),
     });
+    if (remainingMs(startedAt, deadlineMs) <= 0) {
+      abortController.abort();
+      return retry('RENDER_TIMEOUT');
+    }
     return Object.freeze({
       status: 'rendered',
       output: new Uint8Array(output.bytes),
@@ -276,15 +290,19 @@ async function verifyWithRuntime(
 ): Promise<CompactResponseVerification> {
   let expected: CompactResponseWitness;
   let rendered: Uint8Array;
+  let contract: CompactResponseContract;
+  let candidate: string | Uint8Array;
   try {
+    contract = snapshotContract(input.contract);
+    candidate = input.candidate;
     expected = parseCompactResponseWitness(input.witness);
-    rendered = snapshotUtf8(input.rendered);
+    rendered = snapshotUtf8(input.rendered, contract.limits.maxRenderedBytes);
   } catch (error) {
     return verificationFailure(
       responseReasonFromError(error, 'WITNESS_MALFORMED'),
     );
   }
-  const replay = await runtime.render(input);
+  const replay = await runtime.render({ contract, candidate });
   if (replay.status !== 'rendered') {
     return Object.freeze({ bound: false, reasons: replay.reasons });
   }
@@ -332,31 +350,77 @@ function snapshotContract(
 function snapshotRenderers(
   input: readonly CompactResponseRenderer[],
 ): readonly RendererSnapshot[] {
+  let inputLength: number;
+  try {
+    if (!Array.isArray(input)) throw new TypeError('Registry must be an array');
+    inputLength = input.length;
+  } catch (error) {
+    throw new CompactResponseError(
+      'RENDERER_NOT_REGISTERED',
+      'Renderer registry is empty or exceeds its limit',
+      error,
+    );
+  }
   if (
-    !Array.isArray(input) ||
-    input.length === 0 ||
-    input.length > MAX_REGISTERED_RENDERERS
+    !Number.isSafeInteger(inputLength) ||
+    inputLength < 1 ||
+    inputLength > MAX_REGISTERED_RENDERERS
   ) {
     throw new CompactResponseError(
       'RENDERER_NOT_REGISTERED',
       'Renderer registry is empty or exceeds its limit',
     );
   }
+
   const seen = new Set<string>();
-  const renderers = input.map((renderer) => {
+  const renderers: RendererSnapshot[] = [];
+  for (let index = 0; index < inputLength; index += 1) {
     let id: unknown;
     let version: unknown;
     let artifactDigest: unknown;
     let outputMediaType: unknown;
-    let locales: readonly unknown[];
+    let locales: readonly string[];
     let render: unknown;
     try {
+      if (!Object.hasOwn(input, index)) {
+        throw new TypeError('Renderer registry cannot contain holes');
+      }
+      const renderer = input[index]!;
       id = renderer.id;
       version = renderer.version;
       artifactDigest = renderer.artifactDigest;
       outputMediaType = renderer.outputMediaType;
-      locales = [...renderer.locales];
+      const localeSource = renderer.locales;
       render = renderer.render;
+      if (!Array.isArray(localeSource)) {
+        throw new TypeError('Renderer locales must be an array');
+      }
+      const localeCount = localeSource.length;
+      if (
+        !Number.isSafeInteger(localeCount) ||
+        localeCount < 1 ||
+        localeCount > 64
+      ) {
+        throw new TypeError('Renderer locales exceed their limit');
+      }
+      const localeSeen = new Set<string>();
+      const localeSnapshot: string[] = [];
+      for (let localeIndex = 0; localeIndex < localeCount; localeIndex += 1) {
+        if (!Object.hasOwn(localeSource, localeIndex)) {
+          throw new TypeError('Renderer locales cannot contain holes');
+        }
+        const locale: unknown = localeSource[localeIndex];
+        if (
+          typeof locale !== 'string' ||
+          !SAFE_LOCALE_PATTERN.test(locale) ||
+          localeSeen.has(locale)
+        ) {
+          throw new TypeError('Renderer locale is malformed or duplicated');
+        }
+        localeSeen.add(locale);
+        localeSnapshot[localeIndex] = locale;
+      }
+      locales = Object.freeze(localeSnapshot);
     } catch (error) {
       throw new CompactResponseError(
         'RENDERER_BINDING_MISMATCH',
@@ -364,24 +428,21 @@ function snapshotRenderers(
         error,
       );
     }
-    const key = `${String(id)}\0${String(version)}`;
     if (
       !isSafeIdentifier(id) ||
       typeof version !== 'string' ||
       !SAFE_VERSION_PATTERN.test(version) ||
       !isSha256Digest(artifactDigest) ||
       !isSafeMediaType(outputMediaType) ||
-      locales.length === 0 ||
-      locales.length > 64 ||
-      locales.some(
-        (locale) =>
-          typeof locale !== 'string' ||
-          !SAFE_LOCALE_PATTERN.test(locale) ||
-          locales.indexOf(locale) !== locales.lastIndexOf(locale),
-      ) ||
-      typeof render !== 'function' ||
-      seen.has(key)
+      typeof render !== 'function'
     ) {
+      throw new CompactResponseError(
+        'RENDERER_BINDING_MISMATCH',
+        'Renderer registration is malformed or ambiguous',
+      );
+    }
+    const key = `${id}\0${version}`;
+    if (seen.has(key)) {
       throw new CompactResponseError(
         'RENDERER_BINDING_MISMATCH',
         'Renderer registration is malformed or ambiguous',
@@ -389,12 +450,12 @@ function snapshotRenderers(
     }
     seen.add(key);
     const renderFunction = render as CompactResponseRenderer['render'];
-    return Object.freeze({
+    renderers[index] = Object.freeze({
       id,
       version,
       artifactDigest,
       outputMediaType,
-      locales: Object.freeze(locales as readonly string[]),
+      locales,
       render: (
         candidate: JsonValue,
         context: Parameters<typeof renderFunction>[1],
@@ -404,7 +465,7 @@ function snapshotRenderers(
           context,
         ]) as ReturnType<typeof renderFunction>,
     });
-  });
+  }
   return Object.freeze(renderers);
 }
 
@@ -478,14 +539,31 @@ function normalizeRenderedOutput(
   try {
     let bytes: Uint8Array;
     if (typeof value === 'string') {
+      if (value.length === 0) return { reason: 'RENDER_OUTPUT_INVALID' };
+      if (value.length > maximumBytes) {
+        return { reason: 'RENDER_OUTPUT_TOO_LARGE' };
+      }
       if (!isWellFormedUnicode(value)) {
         return { reason: 'RENDER_OUTPUT_INVALID' };
       }
+      const byteLength = Buffer.byteLength(value, 'utf8');
+      if (byteLength === 0) return { reason: 'RENDER_OUTPUT_INVALID' };
+      if (byteLength > maximumBytes) {
+        return { reason: 'RENDER_OUTPUT_TOO_LARGE' };
+      }
       bytes = new TextEncoder().encode(value);
-    } else if (value instanceof Uint8Array) {
-      bytes = new Uint8Array(value);
     } else {
-      return { reason: 'RENDER_OUTPUT_INVALID' };
+      const snapshot = snapshotBoundedUint8Array(value, maximumBytes);
+      if (snapshot.status === 'too-large') {
+        return { reason: 'RENDER_OUTPUT_TOO_LARGE' };
+      }
+      if (snapshot.status === 'invalid') {
+        return { reason: 'RENDER_OUTPUT_INVALID' };
+      }
+      if (snapshot.bytes.byteLength === 0) {
+        return { reason: 'RENDER_OUTPUT_INVALID' };
+      }
+      bytes = snapshot.bytes;
     }
     if (bytes.byteLength === 0) return { reason: 'RENDER_OUTPUT_INVALID' };
     if (bytes.byteLength > maximumBytes) {
@@ -498,8 +576,11 @@ function normalizeRenderedOutput(
   }
 }
 
-function snapshotUtf8(value: string | Uint8Array): Uint8Array {
-  const normalized = normalizeRenderedOutput(value, Number.MAX_SAFE_INTEGER);
+function snapshotUtf8(
+  value: string | Uint8Array,
+  maximumBytes: number,
+): Uint8Array {
+  const normalized = normalizeRenderedOutput(value, maximumBytes);
   if ('reason' in normalized) {
     throw new CompactResponseError(
       'WITNESS_MISMATCH',
@@ -531,18 +612,27 @@ function remainingMs(startedAt: number, limitMs: number): number {
 }
 
 async function beforeDeadline<Value>(
-  task: Promise<Value>,
+  task: () => Value | PromiseLike<Value>,
   timeoutMs: number,
 ): Promise<Value | typeof TIMEOUT> {
   if (timeoutMs <= 0) return TIMEOUT;
+  const deadline = performance.now() + timeoutMs;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await Promise.race([
-      task,
-      new Promise<typeof TIMEOUT>((resolve) => {
-        timer = setTimeout(() => resolve(TIMEOUT), timeoutMs);
-      }),
-    ]);
+    let result: Value | typeof TIMEOUT;
+    try {
+      result = await Promise.race([
+        Promise.resolve().then(task),
+        new Promise<typeof TIMEOUT>((resolve) => {
+          timer = setTimeout(() => resolve(TIMEOUT), timeoutMs);
+        }),
+      ]);
+    } catch (error) {
+      if (performance.now() >= deadline) return TIMEOUT;
+      throw error;
+    }
+    if (result !== TIMEOUT && performance.now() >= deadline) return TIMEOUT;
+    return result;
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }
