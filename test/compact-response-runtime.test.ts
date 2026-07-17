@@ -159,6 +159,16 @@ describe('compact response runtime', () => {
     expect(
       await runtime({
         ...base,
+        render: () => new Proxy(new Uint8Array([0x78]), {}),
+      }).render({ contract, candidate }),
+    ).toEqual({
+      status: 'retry-required',
+      reasons: ['RENDER_OUTPUT_INVALID'],
+    });
+
+    expect(
+      await runtime({
+        ...base,
         render: () => 'x'.repeat(contract.limits.maxRenderedBytes + 1),
       }).render({ contract, candidate }),
     ).toEqual({
@@ -211,5 +221,26 @@ describe('compact response runtime', () => {
       projectedSavingsRatioPpm: 0,
       benefitProjected: false,
     });
+  });
+
+  it('snapshots registration fields once and rejects duplicate or throwing registrations', () => {
+    const base = createChangeReportMarkdownRenderer();
+    expect(() =>
+      createCompactResponseRuntime({ renderers: [base, base] }),
+    ).toThrowError(
+      expect.objectContaining({ code: 'RENDERER_BINDING_MISMATCH' }),
+    );
+
+    const throwing = new Proxy(base, {
+      get(target, property, receiver) {
+        if (property === 'id') throw new Error('private getter failure');
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    expect(() =>
+      createCompactResponseRuntime({ renderers: [throwing] }),
+    ).toThrowError(
+      expect.objectContaining({ code: 'RENDERER_BINDING_MISMATCH' }),
+    );
   });
 });

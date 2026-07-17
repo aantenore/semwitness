@@ -344,21 +344,42 @@ function snapshotRenderers(
   }
   const seen = new Set<string>();
   const renderers = input.map((renderer) => {
-    const locales = [...renderer.locales];
-    const key = `${renderer.id}\0${renderer.version}`;
+    let id: unknown;
+    let version: unknown;
+    let artifactDigest: unknown;
+    let outputMediaType: unknown;
+    let locales: readonly unknown[];
+    let render: unknown;
+    try {
+      id = renderer.id;
+      version = renderer.version;
+      artifactDigest = renderer.artifactDigest;
+      outputMediaType = renderer.outputMediaType;
+      locales = [...renderer.locales];
+      render = renderer.render;
+    } catch (error) {
+      throw new CompactResponseError(
+        'RENDERER_BINDING_MISMATCH',
+        'Renderer registration cannot be snapshotted',
+        error,
+      );
+    }
+    const key = `${String(id)}\0${String(version)}`;
     if (
-      !isSafeIdentifier(renderer.id) ||
-      !SAFE_VERSION_PATTERN.test(renderer.version) ||
-      !isSha256Digest(renderer.artifactDigest) ||
-      !isSafeMediaType(renderer.outputMediaType) ||
+      !isSafeIdentifier(id) ||
+      typeof version !== 'string' ||
+      !SAFE_VERSION_PATTERN.test(version) ||
+      !isSha256Digest(artifactDigest) ||
+      !isSafeMediaType(outputMediaType) ||
       locales.length === 0 ||
       locales.length > 64 ||
       locales.some(
         (locale) =>
+          typeof locale !== 'string' ||
           !SAFE_LOCALE_PATTERN.test(locale) ||
           locales.indexOf(locale) !== locales.lastIndexOf(locale),
       ) ||
-      typeof renderer.render !== 'function' ||
+      typeof render !== 'function' ||
       seen.has(key)
     ) {
       throw new CompactResponseError(
@@ -367,17 +388,21 @@ function snapshotRenderers(
       );
     }
     seen.add(key);
-    const render = renderer.render;
+    const renderFunction = render as CompactResponseRenderer['render'];
     return Object.freeze({
-      id: renderer.id,
-      version: renderer.version,
-      artifactDigest: renderer.artifactDigest,
-      outputMediaType: renderer.outputMediaType,
-      locales: Object.freeze(locales),
-      render: (candidate: JsonValue, context: Parameters<typeof render>[1]) =>
-        Reflect.apply(render, undefined, [candidate, context]) as ReturnType<
-          typeof render
-        >,
+      id,
+      version,
+      artifactDigest,
+      outputMediaType,
+      locales: Object.freeze(locales as readonly string[]),
+      render: (
+        candidate: JsonValue,
+        context: Parameters<typeof renderFunction>[1],
+      ) =>
+        Reflect.apply(renderFunction, undefined, [
+          candidate,
+          context,
+        ]) as ReturnType<typeof renderFunction>,
     });
   });
   return Object.freeze(renderers);
@@ -387,23 +412,37 @@ function snapshotTokenizer(
   tokenizer: TokenizerAdapter | undefined,
 ): TokenizerSnapshot | undefined {
   if (tokenizer === undefined) return undefined;
+  let id: unknown;
+  let fingerprint: unknown;
+  let count: unknown;
+  try {
+    id = tokenizer.id;
+    fingerprint = tokenizer.fingerprint;
+    count = tokenizer.count;
+  } catch (error) {
+    throw new CompactResponseError(
+      'TOKENIZER_ERROR',
+      'Tokenizer registration cannot be snapshotted',
+      error,
+    );
+  }
   if (
-    !isSafeIdentifier(tokenizer.id) ||
-    !isSafeTokenizerFingerprint(tokenizer.fingerprint) ||
-    typeof tokenizer.count !== 'function'
+    !isSafeIdentifier(id) ||
+    !isSafeTokenizerFingerprint(fingerprint) ||
+    typeof count !== 'function'
   ) {
     throw new CompactResponseError(
       'TOKENIZER_ERROR',
       'Tokenizer registration is malformed',
     );
   }
-  const count = tokenizer.count;
+  const countFunction = count as TokenizerAdapter['count'];
   return Object.freeze({
-    id: tokenizer.id,
-    fingerprint: tokenizer.fingerprint,
+    id,
+    fingerprint,
     count: (bytes: Uint8Array, mediaType: string) =>
-      Reflect.apply(count, tokenizer, [bytes, mediaType]) as ReturnType<
-        typeof count
+      Reflect.apply(countFunction, tokenizer, [bytes, mediaType]) as ReturnType<
+        typeof countFunction
       >,
   });
 }
@@ -436,27 +475,27 @@ function normalizeRenderedOutput(
   value: string | Uint8Array,
   maximumBytes: number,
 ): { readonly bytes: Uint8Array } | { readonly reason: ResponseReasonCode } {
-  let bytes: Uint8Array;
-  if (typeof value === 'string') {
-    if (!isWellFormedUnicode(value)) {
+  try {
+    let bytes: Uint8Array;
+    if (typeof value === 'string') {
+      if (!isWellFormedUnicode(value)) {
+        return { reason: 'RENDER_OUTPUT_INVALID' };
+      }
+      bytes = new TextEncoder().encode(value);
+    } else if (value instanceof Uint8Array) {
+      bytes = new Uint8Array(value);
+    } else {
       return { reason: 'RENDER_OUTPUT_INVALID' };
     }
-    bytes = new TextEncoder().encode(value);
-  } else if (value instanceof Uint8Array) {
-    bytes = new Uint8Array(value);
-  } else {
-    return { reason: 'RENDER_OUTPUT_INVALID' };
-  }
-  if (bytes.byteLength === 0) return { reason: 'RENDER_OUTPUT_INVALID' };
-  if (bytes.byteLength > maximumBytes) {
-    return { reason: 'RENDER_OUTPUT_TOO_LARGE' };
-  }
-  try {
+    if (bytes.byteLength === 0) return { reason: 'RENDER_OUTPUT_INVALID' };
+    if (bytes.byteLength > maximumBytes) {
+      return { reason: 'RENDER_OUTPUT_TOO_LARGE' };
+    }
     new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    return { bytes };
   } catch {
     return { reason: 'RENDER_OUTPUT_INVALID' };
   }
-  return { bytes };
 }
 
 function snapshotUtf8(value: string | Uint8Array): Uint8Array {

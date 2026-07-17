@@ -386,7 +386,10 @@ function decodeExactUtf8(source: string | Uint8Array, limit: number): string {
   const snapshot = new Uint8Array(source);
   if (snapshot.byteLength > limit) throw malformedWitness();
   try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(snapshot);
+    return new TextDecoder('utf-8', {
+      fatal: true,
+      ignoreBOM: true,
+    }).decode(snapshot);
   } catch (error) {
     throw malformedWitness(error);
   }

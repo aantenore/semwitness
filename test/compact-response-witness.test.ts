@@ -45,6 +45,17 @@ describe('compact response witness', () => {
         code: 'WITNESS_MALFORMED',
       }),
     );
+    const bom = new Uint8Array([
+      0xef,
+      0xbb,
+      0xbf,
+      ...new TextEncoder().encode(wire),
+    ]);
+    expect(() => parseCompactResponseWitness(bom)).toThrowError(
+      expect.objectContaining<Partial<CompactResponseError>>({
+        code: 'WITNESS_MALFORMED',
+      }),
+    );
   });
 
   it('binds the exact candidate bytes, canonical payload and output', async () => {
