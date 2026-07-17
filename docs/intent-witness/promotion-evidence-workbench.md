@@ -366,17 +366,61 @@ semwitness.dev/intent-cache-lookup-receipt/v1alpha1
 semwitness.dev/intent-normalization-bypass-receipt/v1alpha1
 ```
 
+### Authoritative assembly
+
+`assembleIntentCachePromotionEvidence({ attestation, cases })` is the public
+host boundary for sealing a fixture from already observed records. The host
+attestation supplies the qualified operation and domain identifiers, deployment
+scope, validity, intent, dependency, sampling, coverage, oracle, evaluator, and
+accounting contracts. It declares `population.attempted` and
+`adversarial.expected`, but deliberately cannot supply aggregate outcome
+counters, cohort corpus digests, a binding kind, or a binding digest. SemWitness
+itself fixes the schema, artifact, unsigned provenance, authentication,
+shadow-only ceiling, mode, plan tier, read effect, Intent IR schema,
+cluster-independence unit, and held-out split literals; these are protocol
+invariants rather than host-attested facts.
+
+The assembler treats both arguments as untrusted data-only state. It rejects
+accessors without invoking them, Proxy objects without invoking their traps,
+custom prototypes, symbol or unknown fields, sparse arrays, oversized cohorts,
+and malformed nested records. Each case must already contain its original
+ordinal, usage observations, witness or receipt, oracle facts, failure facts,
+and valid `caseDigest`. The public `cases` input is typed as
+`readonly unknown[]` because validation, not a caller cast to a sealed case
+type, establishes trust. The assembler never creates, repairs, sorts, drops, or
+relabels a case.
+
+Only these facts are derived after every case has passed the existing strict
+parser:
+
+- emitted, complete, and failed counts for each cohort, with population
+  `dropped: 0`;
+- ordered population and adversarial corpus digests over the supplied case
+  digests;
+- the final binding digest.
+
+The declared population attempts and adversarial expected count must equal the
+dense array length before any case record is read. Each case is then parsed once
+and accumulated against the same 256 KiB record and 128 MiB line-terminated
+document budgets as strict JSONL. Accumulation stops immediately when either
+budget is exceeded. The shared parsed-fixture finalizer applies ordinal
+continuity, cohort order, uniqueness, cross-links, contract bindings, digest
+validation, and deep-freeze checks without parsing the records a second time.
+The returned fixture is a detached, deeply frozen snapshot; later caller
+mutation cannot change it. Assembly performs no network, storage, cache, model,
+or provider operation.
+
 The strict JSONL contains one binding followed by contiguous ordered population
 cases and then contiguous ordered adversarial cases. Ordinals must be exactly
-`0..attempted-1` and `0..expected-1` in input order; the parser never sorts or
-normalizes evidence before recomputing the ordered corpus digests. Closed record variants are
-`population-complete`, `population-failure`, `adversarial-complete`, and
-`adversarial-failure`; each complete record contains exactly one of the three
-execution paths above. Population is exactly plan/read. Adversarial evidence is
-still plan-tier and uses the qualified read operation except that `side-effect`
-uses the bound conformance-only write/irreversible probe described above.
-Observation and response are malformed in every cohort. Every runtime decision
-remains `mode: "shadow"` and `applied: false`.
+`0..(attempted + expected - 1)` in input order; the parser never sorts or
+normalizes evidence before recomputing the ordered corpus digests. Closed
+record variants are `population-complete`, `population-failure`,
+`adversarial-complete`, and `adversarial-failure`; each complete record contains
+exactly one of the three execution paths above. Population is exactly plan/read.
+Adversarial evidence is still plan-tier and uses the qualified read operation
+except that `side-effect` uses the bound conformance-only write/irreversible
+probe described above. Observation and response are malformed in every cohort.
+Every runtime decision remains `mode: "shadow"` and `applied: false`.
 
 The public evaluator accepts bounded JSONL bytes/text or an untrusted object
 fixture and routes every form through the strict parser before deriving any
@@ -407,6 +451,8 @@ symlinks are refused. No output manifest is created on exit `1` or `2`.
 Must:
 
 - Export `semwitness/intent/host` without changing `semwitness/intent`.
+- Assemble complete host-attested fixtures without manufacturing, repairing,
+  sorting, dropping, or relabelling case evidence.
 - Enforce both-cohort completeness, cluster uniqueness, selective-reporting
   counters, exact origin separation, full truth-table derivation, critical
   intersections, strict qualification scope, and content-free output.
@@ -461,27 +507,28 @@ gate even when all scenario intersections are populated.
 
 ## Acceptance criteria
 
-| ID   | Requirement               | Acceptance                                                                                                                              | Verification                  |
-| ---- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| IP1  | Contract isolation        | Compression manifests and intent-cache qualification are mutually invalid                                                               | Cross-schema tests            |
-| IP2  | Strict payload-free input | Unknown/raw fields, duplicate keys, oversized lines, sparse/accessor values, and malformed Unicode fail                                 | Parser/privacy tests          |
-| IP3  | Population completeness   | Attempted equals emitted, dropped is zero, source-log root/counters bind, and any explicit population failure blocks                    | Selective-reporting tests     |
-| IP4  | Independent denominator   | Cluster HMACs are unique; exact/adversarial/repeated trials cannot pad semantic bounds                                                  | Denominator attack tests      |
-| IP5  | Explicit estimands        | FDR, unsafe-admission rate, and false-miss rate retain separate denominators                                                            | Metric truth-table tests      |
-| IP6  | Adversarial intersections | Every scenario × difficulty × cache cell meets its minimum and never enters statistical n                                               | Missing/intersection tests    |
-| IP7  | Safety truth table        | Only the complete safe conjunction may would-hit; every unknown/not-comparable state fails                                              | Exhaustive truth-table tests  |
-| IP8  | Statistical boundary      | Exact 2,994/2,995 plan boundary holds for both safety estimands; future response-boundary math remains exact                            | Deterministic boundary tests  |
-| IP9  | Scoped qualification      | Read-only plan tier, one operation/domain, every dependency slot, validity and revocation are bound                                     | Manifest mutation tests       |
-| IP10 | Useful coverage           | The one qualified operation has 25 independent hits and 10% semantic coverage                                                           | No-op/partial-operation tests |
-| IP11 | Net value                 | Global and critical reusable intersections pass median, ratio-of-sums, p10, and per-case gates                                          | Weighted/Simpson attack tests |
-| IP12 | Fail-closed overhead      | Mandatory-bypass/fault intersections stay within cost/latency overhead ceilings                                                         | Fault/overhead tests          |
-| IP13 | Honest provenance         | Output is unsigned and structurally shadow-only; future active parsers reject it                                                        | Snapshot/cross-mode tests     |
-| IP14 | Safe CLI                  | Exit `0/2/1` is stable and a new private manifest exists only on `0`                                                                    | CLI and I/O fault tests       |
-| IP15 | Plugin delivery           | Bundled plugin exposes the evaluator without workspace dependencies                                                                     | Isolated plugin smoke         |
-| IP16 | Package delivery          | Installed tarball resolves `semwitness/intent/host` declarations and runtime                                                            | Pack-install smoke            |
-| IP17 | Derived identity          | Source relation and operation/domain scope are recomputed from HMACs, witnesses and binding digests, never caller labels                | Origin/scope-inflation tests  |
-| IP18 | Cohort semantics          | Population and ordinary adversarial cases use the qualified plan/read operation; side-effect uses a scoped-out write/irreversible probe | Cohort mutation tests         |
-| IP19 | Phenomenon coverage       | Every required adversarial phenomenon tag is present at least once and reported deterministically                                       | Missing-tag mutation tests    |
+| ID   | Requirement               | Acceptance                                                                                                                                                                                           | Verification                  |
+| ---- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| IP1  | Contract isolation        | Compression manifests and intent-cache qualification are mutually invalid                                                                                                                            | Cross-schema tests            |
+| IP2  | Strict payload-free input | Unknown/raw fields, duplicate keys, oversized lines, sparse/accessor values, and malformed Unicode fail                                                                                              | Parser/privacy tests          |
+| IP3  | Population completeness   | Attempted equals emitted, dropped is zero, source-log root/counters bind, and any explicit population failure blocks                                                                                 | Selective-reporting tests     |
+| IP4  | Independent denominator   | Cluster HMACs are unique; exact/adversarial/repeated trials cannot pad semantic bounds                                                                                                               | Denominator attack tests      |
+| IP5  | Explicit estimands        | FDR, unsafe-admission rate, and false-miss rate retain separate denominators                                                                                                                         | Metric truth-table tests      |
+| IP6  | Adversarial intersections | Every scenario × difficulty × cache cell meets its minimum and never enters statistical n                                                                                                            | Missing/intersection tests    |
+| IP7  | Safety truth table        | Only the complete safe conjunction may would-hit; every unknown/not-comparable state fails                                                                                                           | Exhaustive truth-table tests  |
+| IP8  | Statistical boundary      | Exact 2,994/2,995 plan boundary holds for both safety estimands; future response-boundary math remains exact                                                                                         | Deterministic boundary tests  |
+| IP9  | Scoped qualification      | Read-only plan tier, one operation/domain, every dependency slot, validity and revocation are bound                                                                                                  | Manifest mutation tests       |
+| IP10 | Useful coverage           | The one qualified operation has 25 independent hits and 10% semantic coverage                                                                                                                        | No-op/partial-operation tests |
+| IP11 | Net value                 | Global and critical reusable intersections pass median, ratio-of-sums, p10, and per-case gates                                                                                                       | Weighted/Simpson attack tests |
+| IP12 | Fail-closed overhead      | Mandatory-bypass/fault intersections stay within cost/latency overhead ceilings                                                                                                                      | Fault/overhead tests          |
+| IP13 | Honest provenance         | Output is unsigned and structurally shadow-only; future active parsers reject it                                                                                                                     | Snapshot/cross-mode tests     |
+| IP14 | Safe CLI                  | Exit `0/2/1` is stable and a new private manifest exists only on `0`                                                                                                                                 | CLI and I/O fault tests       |
+| IP15 | Plugin delivery           | Bundled plugin exposes the evaluator without workspace dependencies                                                                                                                                  | Isolated plugin smoke         |
+| IP16 | Package delivery          | Installed tarball resolves `semwitness/intent/host` declarations and runtime                                                                                                                         | Pack-install smoke            |
+| IP17 | Derived identity          | Source relation and operation/domain scope are recomputed from HMACs, witnesses and binding digests, never caller labels                                                                             | Origin/scope-inflation tests  |
+| IP18 | Cohort semantics          | Population and ordinary adversarial cases use the qualified plan/read operation; side-effect uses a scoped-out write/irreversible probe                                                              | Cohort mutation tests         |
+| IP19 | Phenomenon coverage       | Every required adversarial phenomenon tag is present at least once and reported deterministically                                                                                                    | Missing-tag mutation tests    |
+| IP20 | Authoritative assembly    | Declared cohort sizes are preflighted before record reads; Proxy traps never run; records parse once under JSONL-equivalent byte budgets; only aggregate counters/corpus/binding digests are derived | Assembler boundary tests      |
 
 ## Acceptance threshold
 

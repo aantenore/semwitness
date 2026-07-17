@@ -1,4 +1,7 @@
+import { types as utilTypes } from 'node:util';
+
 import {
+  canonicalJson,
   immutableJson,
   toJsonValue,
   type JsonValue,
@@ -13,6 +16,7 @@ import {
   type Sha256Digest,
 } from '../domain/types.js';
 import {
+  inspectDenseDataArrayLength,
   snapshotDataRecord,
   snapshotDenseDataArray,
 } from '../host/data-only.js';
@@ -74,6 +78,7 @@ import {
   type IntentCachePopulationEvidenceCase,
   type IntentCachePromotionAttemptedOperation,
   type IntentCachePromotionCompletePath,
+  type IntentCachePromotionEvidenceAssemblyInput,
   type IntentCachePromotionEvidenceBinding,
   type IntentCachePromotionEvidenceCase,
   type IntentCachePromotionEvidenceFixture,
@@ -131,8 +136,20 @@ const BINDING_FIELDS = [
   'evaluation',
   'bindingDigest',
 ] as const;
+const ASSEMBLY_INPUT_FIELDS = ['attestation', 'cases'] as const;
+const ATTESTATION_FIELDS = [
+  'qualifiedOperation',
+  'scope',
+  'validity',
+  'intentContract',
+  'dependencies',
+  'population',
+  'adversarial',
+  'evaluation',
+] as const;
 const ARTIFACT_FIELDS = ['id', 'version'] as const;
 const QUALIFIED_OPERATION_FIELDS = ['operation', 'domain', 'effect'] as const;
+const QUALIFIED_OPERATION_ATTESTATION_FIELDS = ['operation', 'domain'] as const;
 const SCOPE_FIELDS = [
   'cacheNamespace',
   'tenant',
@@ -145,6 +162,15 @@ const VALIDITY_FIELDS = [
 ] as const;
 const INTENT_CONTRACT_FIELDS = [
   'intentIrSchema',
+  'ontology',
+  'normalizer',
+  'operationRegistry',
+  'resolver',
+  'normalizationPolicyDigest',
+  'cacheAdmissionPolicyDigest',
+  'sourceHmacKeyVersionDigest',
+] as const;
+const INTENT_CONTRACT_ATTESTATION_FIELDS = [
   'ontology',
   'normalizer',
   'operationRegistry',
@@ -195,6 +221,14 @@ const POPULATION_FIELDS = [
   'complete',
   'failed',
 ] as const;
+const POPULATION_ATTESTATION_FIELDS = [
+  'populationFrameDigest',
+  'sourceLogRootDigest',
+  'samplingProtocolDigest',
+  'inclusionPolicyDigest',
+  'samplingWindowDigest',
+  'attempted',
+] as const;
 const ADVERSARIAL_FIELDS = [
   'corpusDigest',
   'coverageDigest',
@@ -203,8 +237,17 @@ const ADVERSARIAL_FIELDS = [
   'complete',
   'failed',
 ] as const;
+const ADVERSARIAL_ATTESTATION_FIELDS = ['coverageDigest', 'expected'] as const;
 const EVALUATION_FIELDS = [
   'split',
+  'evaluationProtocolDigest',
+  'evaluatorDigest',
+  'oracleDigest',
+  'accountingContractDigest',
+  'costModel',
+  'currencyUnitDigest',
+] as const;
+const EVALUATION_ATTESTATION_FIELDS = [
   'evaluationProtocolDigest',
   'evaluatorDigest',
   'oracleDigest',
@@ -346,6 +389,240 @@ const ATTESTED_ORACLE_OPERATION_FIELDS = ['kind', 'binding'] as const;
 const UNAVAILABLE_OPERATION_FIELDS = ['status'] as const;
 const OBSERVED_OPERATION_FIELDS = ['status', 'binding'] as const;
 const FAILURE_FIELDS = ['stage', 'reason', 'evidenceDigest'] as const;
+
+const UNSEALED_BINDING_DIGEST =
+  'sha256:0000000000000000000000000000000000000000000000000000000000000000' as Sha256Digest;
+
+/**
+ * Seal deployment-attested binding material around complete, parser-verified
+ * promotion records. The assembler derives aggregation only; it never creates
+ * or repairs case witnesses, oracle facts, usage, ordinals, or case digests.
+ */
+export function assembleIntentCachePromotionEvidence(
+  value: IntentCachePromotionEvidenceAssemblyInput,
+): IntentCachePromotionEvidenceFixture {
+  try {
+    const input = snapshotDataRecord(value, ASSEMBLY_INPUT_FIELDS);
+    const attestation = snapshotDataRecord(
+      input.attestation,
+      ATTESTATION_FIELDS,
+    );
+    const qualifiedOperation = snapshotDataRecord(
+      attestation.qualifiedOperation,
+      QUALIFIED_OPERATION_ATTESTATION_FIELDS,
+    );
+    const intentContract = snapshotDataRecord(
+      attestation.intentContract,
+      INTENT_CONTRACT_ATTESTATION_FIELDS,
+    );
+    const population = snapshotDataRecord(
+      attestation.population,
+      POPULATION_ATTESTATION_FIELDS,
+    );
+    const adversarial = snapshotDataRecord(
+      attestation.adversarial,
+      ADVERSARIAL_ATTESTATION_FIELDS,
+    );
+    const evaluation = snapshotDataRecord(
+      attestation.evaluation,
+      EVALUATION_ATTESTATION_FIELDS,
+    );
+    const attempted = parseDeclaredCohortSize(
+      population.attempted,
+      'population attempt',
+    );
+    const expected = parseDeclaredCohortSize(
+      adversarial.expected,
+      'adversarial expectation',
+    );
+    const declaredTotal = attempted + expected;
+    if (
+      !Number.isSafeInteger(declaredTotal) ||
+      declaredTotal > MAX_INTENT_CACHE_PROMOTION_EVIDENCE_CASES
+    ) {
+      throw malformedEvidence('Declared cohorts exceed the case limit');
+    }
+    const actualTotal = inspectDenseDataArrayLength(
+      input.cases,
+      0,
+      MAX_INTENT_CACHE_PROMOTION_EVIDENCE_CASES,
+    );
+    if (actualTotal !== declaredTotal) {
+      throw malformedEvidence(
+        'Evidence record count does not match the attestation',
+      );
+    }
+
+    const attestedBinding = parseBindingDocument({
+      schema: INTENT_CACHE_PROMOTION_EVIDENCE_SCHEMA,
+      kind: 'binding',
+      artifact: INTENT_CACHE_PROMOTION_EVIDENCE_ARTIFACT,
+      provenance: 'host-attested-unsigned',
+      evidenceAuthentication: 'none',
+      activationCeiling: 'shadow-only',
+      mode: 'shadow',
+      tier: 'plan',
+      qualifiedOperation: {
+        operation: qualifiedOperation.operation,
+        domain: qualifiedOperation.domain,
+        effect: 'read',
+      },
+      scope: attestation.scope,
+      validity: attestation.validity,
+      intentContract: {
+        intentIrSchema: 'semwitness.dev/intent-ir/v1alpha1',
+        ontology: intentContract.ontology,
+        normalizer: intentContract.normalizer,
+        operationRegistry: intentContract.operationRegistry,
+        resolver: intentContract.resolver,
+        normalizationPolicyDigest: intentContract.normalizationPolicyDigest,
+        cacheAdmissionPolicyDigest: intentContract.cacheAdmissionPolicyDigest,
+        sourceHmacKeyVersionDigest: intentContract.sourceHmacKeyVersionDigest,
+      },
+      dependencies: attestation.dependencies,
+      population: {
+        populationFrameDigest: population.populationFrameDigest,
+        corpusDigest: digestIntentCachePromotionPopulationCorpus([]),
+        sourceLogRootDigest: population.sourceLogRootDigest,
+        samplingProtocolDigest: population.samplingProtocolDigest,
+        inclusionPolicyDigest: population.inclusionPolicyDigest,
+        samplingWindowDigest: population.samplingWindowDigest,
+        independenceUnit: 'cluster',
+        attempted,
+        emitted: attempted,
+        dropped: 0,
+        complete: attempted,
+        failed: 0,
+      },
+      adversarial: {
+        corpusDigest: digestIntentCachePromotionAdversarialCorpus([]),
+        coverageDigest: adversarial.coverageDigest,
+        expected,
+        emitted: expected,
+        complete: expected,
+        failed: 0,
+      },
+      evaluation: {
+        split: 'held-out',
+        evaluationProtocolDigest: evaluation.evaluationProtocolDigest,
+        evaluatorDigest: evaluation.evaluatorDigest,
+        oracleDigest: evaluation.oracleDigest,
+        accountingContractDigest: evaluation.accountingContractDigest,
+        costModel: evaluation.costModel,
+        currencyUnitDigest: evaluation.currencyUnitDigest,
+      },
+      bindingDigest: UNSEALED_BINDING_DIGEST,
+    });
+
+    const caseValues = snapshotDenseDataArray(
+      input.cases,
+      declaredTotal,
+      declaredTotal,
+    );
+    const cases: IntentCachePromotionEvidenceCase[] = [];
+    let caseDocumentBytes = 0;
+    for (const caseValue of caseValues) {
+      const item = parseCase(caseValue);
+      caseDocumentBytes = accumulateParsedCaseDocumentBytes(
+        caseDocumentBytes,
+        item,
+      );
+      cases.push(item);
+    }
+
+    const populationCases = cases.filter(
+      (item): item is IntentCachePopulationEvidenceCase =>
+        item.kind === 'population-complete' ||
+        item.kind === 'population-failure',
+    );
+    const adversarialCases = cases.filter(
+      (item): item is IntentCacheAdversarialEvidenceCase =>
+        item.kind === 'adversarial-complete' ||
+        item.kind === 'adversarial-failure',
+    );
+    const populationComplete = populationCases.filter(
+      (item) => item.kind === 'population-complete',
+    ).length;
+    const populationFailed = populationCases.length - populationComplete;
+    const adversarialComplete = adversarialCases.filter(
+      (item) => item.kind === 'adversarial-complete',
+    ).length;
+    const adversarialFailed = adversarialCases.length - adversarialComplete;
+
+    const unsealedBinding = parseBindingDocument({
+      ...attestedBinding,
+      population: {
+        ...attestedBinding.population,
+        corpusDigest: digestIntentCachePromotionPopulationCorpus(
+          populationCases.map((item) => item.caseDigest),
+        ),
+        emitted: populationCases.length,
+        complete: populationComplete,
+        failed: populationFailed,
+      },
+      adversarial: {
+        ...attestedBinding.adversarial,
+        corpusDigest: digestIntentCachePromotionAdversarialCorpus(
+          adversarialCases.map((item) => item.caseDigest),
+        ),
+        emitted: adversarialCases.length,
+        complete: adversarialComplete,
+        failed: adversarialFailed,
+      },
+      bindingDigest: UNSEALED_BINDING_DIGEST,
+    });
+    const binding = parseBinding({
+      ...unsealedBinding,
+      bindingDigest: digestBinding(unsealedBinding),
+    });
+
+    assertAssembledEvidenceDocumentBudget(binding, caseDocumentBytes);
+    return finalizeParsedFixture(binding, cases);
+  } catch (error) {
+    throw normalizeEvidenceError(error);
+  }
+}
+
+function parseDeclaredCohortSize(value: unknown, label: string): number {
+  if (!isNonNegativeSafeInteger(value)) {
+    throw malformedEvidence(`Declared ${label} count is malformed`);
+  }
+  return value;
+}
+
+function accumulateParsedCaseDocumentBytes(
+  current: number,
+  item: IntentCachePromotionEvidenceCase,
+): number {
+  const next = current + serializedParsedRecordBytes(item, 'case') + 1;
+  if (next > MAX_INTENT_CACHE_PROMOTION_EVIDENCE_DOCUMENT_BYTES) {
+    throw malformedEvidence('Evidence document exceeds the byte limit');
+  }
+  return next;
+}
+
+function assertAssembledEvidenceDocumentBudget(
+  binding: IntentCachePromotionEvidenceBinding,
+  caseDocumentBytes: number,
+): void {
+  if (
+    serializedParsedRecordBytes(binding, 'binding') + 1 + caseDocumentBytes >
+    MAX_INTENT_CACHE_PROMOTION_EVIDENCE_DOCUMENT_BYTES
+  ) {
+    throw malformedEvidence('Evidence document exceeds the byte limit');
+  }
+}
+
+function serializedParsedRecordBytes(
+  value: IntentCachePromotionEvidenceBinding | IntentCachePromotionEvidenceCase,
+  record: 'binding' | 'case',
+): number {
+  const bytes = Buffer.byteLength(canonicalJson(toJsonValue(value)), 'utf8');
+  if (bytes > MAX_INTENT_CACHE_PROMOTION_EVIDENCE_LINE_BYTES) {
+    throw malformedEvidence(`Evidence ${record} exceeds the line byte limit`);
+  }
+  return bytes;
+}
 
 export function parseIntentCachePromotionEvidenceJsonl(
   source: string | Uint8Array,
@@ -503,8 +780,15 @@ function parseRecords(
   }
   const binding = parseBinding(bindingValue);
   const cases = caseValues.map(parseCase);
+  return finalizeParsedFixture(binding, cases);
+}
+
+function finalizeParsedFixture(
+  binding: IntentCachePromotionEvidenceBinding,
+  cases: readonly IntentCachePromotionEvidenceCase[],
+): IntentCachePromotionEvidenceFixture {
   validateFixture(binding, cases);
-  const frozenCases = Object.freeze(cases);
+  const frozenCases = Object.freeze([...cases]);
   const fixture = Object.assign(Object.create(null), {
     binding,
     cases: frozenCases,
@@ -1957,7 +2241,12 @@ function includesString<const Values extends readonly string[]>(
 }
 
 function dataDiscriminator(value: unknown, field: string): unknown {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+  if (
+    value === null ||
+    typeof value !== 'object' ||
+    isObjectProxy(value) ||
+    Array.isArray(value)
+  ) {
     throw malformedEvidence('Evidence record is malformed');
   }
   const prototype = Reflect.getPrototypeOf(value);
@@ -2006,6 +2295,9 @@ function snapshotJsonData(value: unknown): JsonValue {
     }
     if (candidate === null || typeof candidate !== 'object') {
       throw malformedEvidence('Nested evidence is not JSON data');
+    }
+    if (isObjectProxy(candidate)) {
+      throw malformedEvidence('Nested evidence contains a proxy');
     }
     if (seen.has(candidate)) {
       throw malformedEvidence('Nested evidence is cyclic');
@@ -2062,7 +2354,7 @@ function decodeBoundedUtf8(source: string | Uint8Array): string {
       throw malformedEvidence('Evidence document exceeds the byte limit');
     }
     text = source;
-  } else if (source instanceof Uint8Array) {
+  } else if (!isObjectProxy(source) && source instanceof Uint8Array) {
     if (
       source.byteLength > MAX_INTENT_CACHE_PROMOTION_EVIDENCE_DOCUMENT_BYTES
     ) {
@@ -2158,4 +2450,10 @@ function normalizeEvidenceError(error: unknown): SemWitnessError {
     return error;
   }
   return malformedEvidence('strict validation failed');
+}
+
+function isObjectProxy(value: unknown): boolean {
+  return (
+    value !== null && typeof value === 'object' && utilTypes.isProxy(value)
+  );
 }

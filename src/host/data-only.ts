@@ -1,3 +1,5 @@
+import { types as utilTypes } from 'node:util';
+
 import { compareCodeUnits } from '../domain/deterministic-order.js';
 
 /**
@@ -10,6 +12,9 @@ export function snapshotDataRecord(
   value: unknown,
   expectedFields: readonly string[],
 ): Readonly<Record<string, unknown>> {
+  if (isObjectProxy(value)) {
+    throw invalidDataOnlyValue();
+  }
   const prototype =
     value !== null && typeof value === 'object'
       ? Reflect.getPrototypeOf(value)
@@ -46,13 +51,40 @@ export function snapshotDataRecord(
   return Object.freeze(snapshot);
 }
 
+/**
+ * Inspect only the bounded dense-array container. Element values and element
+ * descriptors are deliberately not read, so callers can reject count
+ * mismatches before touching untrusted records.
+ */
+export function inspectDenseDataArrayLength(
+  value: unknown,
+  minimumLength: number,
+  maximumLength: number,
+): number {
+  return inspectDenseDataArray(value, minimumLength, maximumLength);
+}
+
 /** Copy a bounded dense array without invoking accessors or retaining aliases. */
 export function snapshotDenseDataArray(
   value: unknown,
   minimumLength: number,
   maximumLength: number,
 ): readonly unknown[] {
+  const length = inspectDenseDataArray(value, minimumLength, maximumLength);
+  const snapshot: unknown[] = [];
+  for (let index = 0; index < length; index += 1) {
+    snapshot.push(dataDescriptorValue(value as unknown[], String(index), true));
+  }
+  return Object.freeze(snapshot);
+}
+
+function inspectDenseDataArray(
+  value: unknown,
+  minimumLength: number,
+  maximumLength: number,
+): number {
   if (
+    isObjectProxy(value) ||
     !Array.isArray(value) ||
     Reflect.getPrototypeOf(value) !== Array.prototype
   ) {
@@ -80,15 +112,12 @@ export function snapshotDenseDataArray(
   if (!keySet.has('length')) {
     throw invalidDataOnlyValue();
   }
-  const snapshot: unknown[] = [];
   for (let index = 0; index < (length as number); index += 1) {
-    const field = String(index);
-    if (!keySet.has(field)) {
+    if (!keySet.has(String(index))) {
       throw invalidDataOnlyValue();
     }
-    snapshot.push(dataDescriptorValue(value, field, true));
   }
-  return Object.freeze(snapshot);
+  return length as number;
 }
 
 function dataDescriptorValue(
@@ -111,4 +140,10 @@ function dataDescriptorValue(
 
 function invalidDataOnlyValue(): TypeError {
   return new TypeError('Value must be bounded data-only state');
+}
+
+function isObjectProxy(value: unknown): boolean {
+  return (
+    value !== null && typeof value === 'object' && utilTypes.isProxy(value)
+  );
 }

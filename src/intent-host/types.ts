@@ -848,3 +848,75 @@ export interface IntentCachePromotionEvidenceFixture {
   readonly binding: IntentCachePromotionEvidenceBinding;
   readonly cases: readonly IntentCachePromotionEvidenceCase[];
 }
+
+/**
+ * Deployment facts that the host must attest before evidence assembly.
+ *
+ * Corpus identity and outcome counters are intentionally absent: the
+ * authoritative assembler derives them from parser-verified case records.
+ */
+export type IntentCachePromotionPopulationAttestation = Omit<
+  IntentCachePromotionEvidenceBinding['population'],
+  | 'corpusDigest'
+  | 'independenceUnit'
+  | 'emitted'
+  | 'dropped'
+  | 'complete'
+  | 'failed'
+>;
+
+/** Deployment facts for the complete, predeclared adversarial cohort. */
+export type IntentCachePromotionAdversarialAttestation = Omit<
+  IntentCachePromotionEvidenceBinding['adversarial'],
+  'corpusDigest' | 'emitted' | 'complete' | 'failed'
+>;
+
+export type IntentCachePromotionQualifiedOperationAttestation = Omit<
+  IntentCachePromotionEvidenceBinding['qualifiedOperation'],
+  'effect'
+>;
+
+export type IntentCachePromotionIntentContractAttestation = Omit<
+  IntentCachePromotionEvidenceBinding['intentContract'],
+  'intentIrSchema'
+>;
+
+export type IntentCachePromotionEvaluationAttestation = Omit<
+  IntentCachePromotionEvidenceBinding['evaluation'],
+  'split'
+>;
+
+/**
+ * Host-attested binding material accepted by the authoritative assembler.
+ * It is not itself promotion evidence; SemWitness supplies protocol literals,
+ * the binding kind, aggregate fields, and the final digest.
+ */
+export type IntentCachePromotionEvidenceAttestation = Omit<
+  IntentCachePromotionEvidenceBinding,
+  | 'schema'
+  | 'kind'
+  | 'artifact'
+  | 'provenance'
+  | 'evidenceAuthentication'
+  | 'activationCeiling'
+  | 'mode'
+  | 'tier'
+  | 'qualifiedOperation'
+  | 'intentContract'
+  | 'population'
+  | 'adversarial'
+  | 'evaluation'
+  | 'bindingDigest'
+> & {
+  readonly qualifiedOperation: IntentCachePromotionQualifiedOperationAttestation;
+  readonly intentContract: IntentCachePromotionIntentContractAttestation;
+  readonly population: IntentCachePromotionPopulationAttestation;
+  readonly adversarial: IntentCachePromotionAdversarialAttestation;
+  readonly evaluation: IntentCachePromotionEvaluationAttestation;
+};
+
+export interface IntentCachePromotionEvidenceAssemblyInput {
+  readonly attestation: IntentCachePromotionEvidenceAttestation;
+  /** Already sealed host records. The assembler validates, but never repairs, them. */
+  readonly cases: readonly unknown[];
+}
