@@ -67,6 +67,7 @@ import {
   evaluateHostPromotionEvidence,
   parseHostPromotionEvidenceJsonl,
 } from '../host/promotion-evidence.js';
+import { CompactResponseError } from '../response/errors.js';
 import {
   createSimulationBundle,
   parseSimulationBundle,
@@ -84,6 +85,7 @@ import {
   readInputBytes,
   writeNewPrivateFile,
 } from './io.js';
+import { addCompactResponseCommands } from './response.js';
 
 const VERSION = '0.5.0-alpha.5';
 const ERROR_SCHEMA = 'semwitness.dev/cli-error/v1alpha1';
@@ -291,6 +293,10 @@ export async function runCli(
         });
       },
     );
+
+  addCompactResponseCommands(program, (code) => {
+    verdictExitCode = Math.max(verdictExitCode, code);
+  });
 
   const intent = program
     .command('intent')
@@ -1165,7 +1171,9 @@ function writeJson(value: unknown): void {
 
 function writeError(error: unknown): void {
   const reason =
-    error instanceof SemWitnessError || error instanceof IntentWitnessError
+    error instanceof SemWitnessError ||
+    error instanceof IntentWitnessError ||
+    error instanceof CompactResponseError
       ? error.code
       : 'MALFORMED_ENVELOPE';
   process.stderr.write(
@@ -1195,6 +1203,10 @@ function safeErrorMessage(reason: string): string {
       return 'Input format is unsupported or malformed';
     case 'MALFORMED_ENVELOPE':
       return 'Command input or serialized data is invalid';
+    case 'CONTRACT_MALFORMED':
+      return 'Compact Response contract is invalid';
+    case 'WITNESS_MALFORMED':
+      return 'Compact Response witness is invalid';
     default:
       return 'SemWitness failed closed with the reported reason code';
   }
