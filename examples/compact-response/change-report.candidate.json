@@ -1,0 +1,1 @@
+{"s":"ok","m":"Implemented proof-bound project lineage","c":[["M","src/app.ts","Added the five-lane observatory view"],["A","test/lineage.test.ts","Covered ambiguous linkage and fail-closed behavior"]],"v":[["P","unit","273 tests"],["P","package","isolated plugin bundle"]],"w":[]}

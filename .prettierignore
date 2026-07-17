@@ -1,3 +1,4 @@
 examples/*.jsonl
+examples/compact-response/*.candidate.json
 plugins/semwitness/dist/
 pnpm-lock.yaml

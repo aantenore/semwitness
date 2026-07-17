@@ -1,0 +1,101 @@
+{
+  "schema": "semwitness.dev/compact-response-contract/v1alpha1",
+  "id": "agent-change-report",
+  "version": "1",
+  "candidate": {
+    "mediaType": "application/json",
+    "schemaDialect": "semwitness.dev/bounded-json-schema/v1alpha1",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "s": {
+          "type": "string",
+          "enum": ["ok", "warn", "fail"]
+        },
+        "m": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "c": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "prefixItems": [
+              {
+                "type": "string",
+                "enum": ["A", "M", "D"]
+              },
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            ],
+            "items": false
+          }
+        },
+        "v": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "prefixItems": [
+              {
+                "type": "string",
+                "enum": ["P", "F", "S"]
+              },
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            ],
+            "items": false
+          }
+        },
+        "w": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        }
+      },
+      "required": ["s", "m", "c", "v", "w"],
+      "additionalProperties": false
+    }
+  },
+  "renderer": {
+    "id": "change-report-markdown",
+    "version": "1",
+    "artifactDigest": "sha256:35931e5fd8e46a37db2015dba46dd26a438040c16447f18c5dc727aa6dac7f4e",
+    "outputMediaType": "text/markdown",
+    "locale": "en"
+  },
+  "limits": {
+    "maxCandidateBytes": 65536,
+    "maxRenderedBytes": 262144,
+    "maxDepth": 32,
+    "maxItems": 4096,
+    "maxStringCodeUnits": 16384,
+    "maxRenderMs": 100
+  }
+}
