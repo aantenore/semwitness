@@ -2,9 +2,11 @@
 
 **Outcome:** SemWitness evaluates candidate context transformations, proves their
 mechanical safety properties, and reports net token effects. Shadow/identity is
-the default. The v0.5 alpha adds an opt-in, promotion-gated host boundary that
-can place verified canonical JSON into explicitly selected AI SDK tool results;
-the CLI and Codex plugin remain local, explicit, shadow-only Compression CI.
+the default. The v0.6 alpha also introduces Compact Response: a model emits a
+small schema-bound JSON representation and a trusted local renderer expands it
+only after strict validation, producing a content-free deterministic witness.
+This is separate from the v0.5 opt-in, promotion-gated host boundary for input
+tool results; the CLI and Codex plugin remain local and explicit.
 The repository also contains IntentWitness, a bounded, typed
 intent-normalization and cache-admission lab. Its Cache Admission Passport
 exports qualification lineage, while its Cache Admission Decision Statement
@@ -62,6 +64,7 @@ The implementation is a modular monolith:
 - **Ports** isolate token counting, content storage, codec execution, and cost accounting.
 - **Adapters** are registered explicitly. Initial deterministic adapters cover identity, reversible whitespace RLE, repeated log lines, and canonical JSON.
 - **Entrypoints** expose a Node.js CLI and a self-contained Codex plugin bundle.
+- **Compact Response** is an additive bounded context with its own strict contract, renderer registry, witness, and package export.
 
 The core is provider-neutral. Configuration chooses registered IDs and parameters; it cannot import packages, execute scripts, or inject arbitrary regular expressions.
 
@@ -112,21 +115,25 @@ pnpm build
 
 The CLI has deliberately **no live `compress` command** in v0.1.
 
-| Command                                                                       | Contract                                                                                                                          |
-| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `analyze`                                                                     | Validate metadata and policy, classify protection, and report eligible codecs and accounting without producing an active rewrite. |
-| `simulate`                                                                    | Execute a candidate in shadow mode, persist the original, verify invariants, and emit a v0.1 bundle.                              |
-| `verify --bundle <file> --store <dir> --json`                                 | Verify a v0.1 bundle and its referenced local content without trusting the producer.                                              |
-| `retrieve <sha256:digest> --store <dir> --out <file>`                         | Recover an exact stored original after digest and path validation.                                                                |
-| `stats --store <dir> --json`                                                  | Count CAS-shaped regular files and bytes plus ignored malformed entries, without reading or reporting source content.             |
-| `replay --fixture <jsonl-file> [--policy <yaml-file>] [--store <dir>] --json` | Re-run a corpus deterministically and check declared mechanical expectations.                                                     |
-| `intent evaluate --normalizer <registry> --fixture <jsonl> [options]`         | Evaluate an exact-alias compiler offline, or an explicitly networked compiler in bounded shadow mode; never serve a cache value.  |
-| `intent promotion evaluate --evidence <jsonl> [options]`                      | Qualify payload-free intent-cache evidence for one plan/read operation in shadow mode; never serve a cache value.                 |
-| `intent passport create --qualification <json> --statement-out <json>`        | Derive an exact private canonical in-toto Statement and print a receipt only; never create an authorization credential.           |
-| `intent passport inspect --statement <json> --qualification <json>`           | Verify strict content-free binding and exact payload identity; report `bound`, never an active admission decision.                |
-| `intent admission create [evidence options] --statement-out <json>`           | Bind an exact Passport and eligible hit to a private per-decision Statement; secret and value remain private.                     |
-| `intent admission inspect --statement <json> [evidence options]`              | Verify exact Statement bytes and all private cross-links; `bound` still carries no serving authority.                             |
-| `promotion evaluate --evidence <jsonl> --policy <yaml> [options]`             | Compile host-attested held-out usage and quality evidence into a host promotion only when every hard gate passes.                 |
+| Command                                                                                   | Contract                                                                                                                                          |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `analyze`                                                                                 | Validate metadata and policy, classify protection, and report eligible codecs and accounting without producing an active rewrite.                 |
+| `simulate`                                                                                | Execute a candidate in shadow mode, persist the original, verify invariants, and emit a v0.1 bundle.                                              |
+| `verify --bundle <file> --store <dir> --json`                                             | Verify a v0.1 bundle and its referenced local content without trusting the producer.                                                              |
+| `retrieve <sha256:digest> --store <dir> --out <file>`                                     | Recover an exact stored original after digest and path validation.                                                                                |
+| `stats --store <dir> --json`                                                              | Count CAS-shaped regular files and bytes plus ignored malformed entries, without reading or reporting source content.                             |
+| `replay --fixture <jsonl-file> [--policy <yaml-file>] [--store <dir>] --json`             | Re-run a corpus deterministically and check declared mechanical expectations.                                                                     |
+| `intent evaluate --normalizer <registry> --fixture <jsonl> [options]`                     | Evaluate an exact-alias compiler offline, or an explicitly networked compiler in bounded shadow mode; never serve a cache value.                  |
+| `intent promotion evaluate --evidence <jsonl> [options]`                                  | Qualify payload-free intent-cache evidence for one plan/read operation in shadow mode; never serve a cache value.                                 |
+| `intent passport create --qualification <json> --statement-out <json>`                    | Derive an exact private canonical in-toto Statement and print a receipt only; never create an authorization credential.                           |
+| `intent passport inspect --statement <json> --qualification <json>`                       | Verify strict content-free binding and exact payload identity; report `bound`, never an active admission decision.                                |
+| `intent admission create [evidence options] --statement-out <json>`                       | Bind an exact Passport and eligible hit to a private per-decision Statement; secret and value remain private.                                     |
+| `intent admission inspect --statement <json> [evidence options]`                          | Verify exact Statement bytes and all private cross-links; `bound` still carries no serving authority.                                             |
+| `promotion evaluate --evidence <jsonl> --policy <yaml> [options]`                         | Compile host-attested held-out usage and quality evidence into a host promotion only when every hard gate passes.                                 |
+| `response contract inspect --contract <json>`                                             | Validate a bounded output contract and report its digest, renderer binding, limits, and local availability without payload data.                  |
+| `response render --contract <json> --candidate <json-or-stdin> --out <file>`              | Validate compact model output, render through the exact registered artifact, atomically write one private output, and emit its canonical witness. |
+| `response verify --contract <json> --candidate <json> --rendered <file> --witness <json>` | Rerender and verify exact contract, candidate bytes, canonical payload, output, renderer, tokenizer, and witness binding.                         |
+| `response replay --contract <json> --candidate <json> --witness <json>`                   | Rerender without writing output and compare the complete deterministic witness.                                                                   |
 
 `analyze` and `simulate` accept a file through `--input` or standard input, plus explicit `--role`, `--kind`, `--trust`, optional `--policy`, `--store`, and `--json`. Run `pnpm semwitness <command> --help` for the authoritative options of the checked-out version.
 
@@ -292,6 +299,73 @@ cancellation is required. See the
 [v0.5 delivery contract](docs/delivery-contract-v0.5.md) and [ADR
 0001](docs/adr/0001-embedded-verified-request-preparer.md).
 
+## Compact Response (v0.6 alpha)
+
+`semwitness/response` tackles output cost at the correct boundary. The model is
+asked to generate only a compact intermediate representation; a local renderer
+then expands it into presentation text. Compressing ordinary text after the
+model produced it would be too late to reduce provider output.
+
+```text
+out-of-band contract + model instruction
+  -> compact strict JSON candidate
+  -> bounded schema validation
+  -> exact renderer ID/version/artifact/locale binding
+  -> deterministic local output
+  -> content-free witness and replay verification
+```
+
+Try the checked-in change-report profile:
+
+```bash
+pnpm semwitness response contract inspect \
+  --contract examples/compact-response/change-report.contract.json \
+  --json
+
+pnpm semwitness response render \
+  --contract examples/compact-response/change-report.contract.json \
+  --candidate examples/compact-response/change-report.candidate.json \
+  --out change-report.md \
+  --json > change-report.witness.json
+
+pnpm semwitness response verify \
+  --contract examples/compact-response/change-report.contract.json \
+  --candidate examples/compact-response/change-report.candidate.json \
+  --rendered change-report.md \
+  --witness change-report.witness.json \
+  --json
+```
+
+The rendered output destination is private and no-clobber. The canonical witness
+is emitted on stdout, so the caller must use a private, new destination (for
+example under `umask 077`) when redirecting it. The witness binds exact candidate
+bytes separately from the canonical JSON payload, plus contract, renderer,
+output, and tokenizer evidence. It contains no candidate or rendered content.
+Local token projection is labelled exact or heuristic, while
+`billedOutputSavings` is always `null` and
+`universalSemanticEquivalence` is always `false`.
+Any invalid candidate, timeout, or exact contract/renderer mismatch fails closed
+as `retry-required`; raw candidates and partial or unverified renderings are
+never output fallbacks. Content-free witnesses are not confidential: stable
+digests and lengths can reveal equality and workload shape, and low-entropy
+values may be dictionary-recovered. Keep witnesses local and private.
+
+The package API is additive and does not contaminate the root export:
+
+```ts
+import {
+  createChangeReportMarkdownRenderer,
+  createCompactResponseRuntime,
+  parseCompactResponseContract,
+} from 'semwitness/response';
+```
+
+See the [delivery contract](docs/compact-response/delivery-contract.md),
+[architecture](docs/compact-response/architecture.md), and
+[threat model](docs/compact-response/threat-model.md). IntentWitness can bind
+the contract digest through its existing `outputContractDigest`; normalization
+and rendering remain separate authorities.
+
 ## Codex plugin
 
 The plugin packages the SemWitness skill and bundled local CLI, including two
@@ -309,12 +383,12 @@ codex plugin marketplace add /absolute/path/to/semwitness
 codex plugin add semwitness@semwitness-local --json
 ```
 
-The reviewed `v0.5.0-alpha.5` ref includes the Promotion Evidence Workbench,
-Cache Admission Passport, and per-hit Cache Admission Decision workflow. For a
-reproducible plugin install, pin that tag:
+The reviewed `v0.6.0-alpha.1` ref also includes Compact Response contract
+inspection, local rendering, exact verification, and replay. For a reproducible
+plugin install, pin that tag:
 
 ```bash
-codex plugin marketplace add aantenore/semwitness --ref v0.5.0-alpha.5
+codex plugin marketplace add aantenore/semwitness --ref v0.6.0-alpha.1
 codex plugin add semwitness@semwitness-local --json
 ```
 

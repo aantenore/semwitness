@@ -1,0 +1,181 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    name: Verify release metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Verify tag and release metadata
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+
+          const packageManifest = JSON.parse(await readFile('package.json', 'utf8'));
+          const pluginManifest = JSON.parse(
+            await readFile('plugins/semwitness/.codex-plugin/plugin.json', 'utf8'),
+          );
+          const expectedTag = `v${packageManifest.version}`;
+          if (process.env.RELEASE_TAG !== expectedTag) {
+            throw new Error(
+              `release tag ${process.env.RELEASE_TAG} does not match ${expectedTag}`,
+            );
+          }
+          if (
+            packageManifest.name !== pluginManifest.name ||
+            packageManifest.version !== pluginManifest.version
+          ) {
+            throw new Error('package and plugin release metadata do not match');
+          }
+          NODE
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$RELEASE_TAG^{commit}" FETCH_HEAD
+
+  verify:
+    name: Verify Node 24 / ${{ matrix.os }}
+    needs: metadata
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 11.13.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm build
+      - name: Verify committed plugin artifacts
+        if: runner.os != 'Windows'
+        run: >-
+          git diff --exit-code --
+          plugins/semwitness/dist/cli.mjs
+          plugins/semwitness/LICENSE
+          plugins/semwitness/THIRD_PARTY_NOTICES
+      - run: pnpm pack --dry-run
+
+  package:
+    name: Build release archive
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 11.13.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Verify committed plugin artifacts
+        run: >-
+          git diff --exit-code --
+          plugins/semwitness/dist/cli.mjs
+          plugins/semwitness/LICENSE
+          plugins/semwitness/THIRD_PARTY_NOTICES
+      - name: Pack and checksum release archive
+        id: archive
+        run: |
+          release_dir="$RUNNER_TEMP/release"
+          mkdir -p "$release_dir"
+          archive_name=$(node --input-type=module -e '
+            const manifest = JSON.parse(await import("node:fs/promises").then((fs) => fs.readFile("package.json", "utf8")));
+            const packageName = manifest.name.replace(/^@/u, "").replaceAll("/", "-");
+            process.stdout.write(`${packageName}-${manifest.version}.tgz`);
+          ')
+          pnpm pack --pack-destination "$release_dir"
+          test -f "$release_dir/$archive_name"
+          tar -tzf "$release_dir/$archive_name" | grep -Fx 'package/dist/response/index.js'
+          tar -tzf "$release_dir/$archive_name" | grep -Fx 'package/dist/response/index.d.ts'
+          tar -tzf "$release_dir/$archive_name" | grep -Fx 'package/examples/compact-response/change-report.contract.json'
+          tar -tzf "$release_dir/$archive_name" | grep -Fx 'package/examples/compact-response/change-report.candidate.json'
+          (
+            cd "$release_dir"
+            sha256sum "$archive_name" > "$archive_name.sha256"
+            sha256sum --check "$archive_name.sha256"
+          )
+      - name: Stage immutable release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ github.ref_name }}
+          path: |
+            ${{ runner.temp }}/release/*.tgz
+            ${{ runner.temp }}/release/*.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub release
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-${{ github.ref_name }}
+          path: ${{ runner.temp }}/release
+      - name: Verify staged checksum
+        run: |
+          cd "$RUNNER_TEMP/release"
+          sha256sum --check ./*.sha256
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          mapfile -t archives < <(find "$RUNNER_TEMP/release" -maxdepth 1 -type f -name '*.tgz' -print)
+          mapfile -t checksums < <(find "$RUNNER_TEMP/release" -maxdepth 1 -type f -name '*.sha256' -print)
+          test "${#archives[@]}" -eq 1
+          test "${#checksums[@]}" -eq 1
+          release_flags=(
+            --repo "$GITHUB_REPOSITORY"
+            --verify-tag
+            --generate-notes
+            --fail-on-no-commits
+            --title "SemWitness $RELEASE_TAG"
+          )
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            release_flags+=(--prerelease)
+          fi
+          gh release create \
+            "$RELEASE_TAG" \
+            "${archives[@]}" \
+            "${checksums[@]}" \
+            "${release_flags[@]}"

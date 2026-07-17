@@ -1,7 +1,7 @@
 {
   "name": "semwitness",
-  "version": "0.5.0-alpha.5",
-  "description": "Proof-carrying compression, bounded intent evaluation, and exact shadow cache lineage.",
+  "version": "0.6.0-alpha.1",
+  "description": "Proof-carrying compression, compact response rendering, bounded intent evaluation, and exact shadow lineage.",
   "author": {
     "name": "Antonio Antenore",
     "email": "ant_ant95@hotmail.it",
@@ -12,6 +12,7 @@
   "license": "Apache-2.0",
   "keywords": [
     "agentic-ai",
+    "compact-output",
     "context-compression",
     "intent-normalization",
     "llm",
@@ -23,8 +24,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "SemWitness",
-    "shortDescription": "Verify compression, intent candidates, promotion evidence, and shadow lineage.",
-    "longDescription": "SemWitness analyzes context, verifies deterministic compression, evaluates bounded intent compilers, runs separate fail-closed evidence workbenches, and creates content-free in-toto Passport and per-hit Decision Statements for exact shadow-only intent-cache lineage without transparent prompt interception or cache authorization.",
+    "shortDescription": "Verify compression, compact responses, intent candidates, and shadow lineage.",
+    "longDescription": "SemWitness analyzes context, verifies deterministic compression, renders schema-bound compact model output through trusted local renderers, evaluates bounded intent compilers, and creates content-free evidence for exact shadow-only lineage without transparent prompt interception, semantic-equivalence claims, or cache authorization.",
     "developerName": "Antonio Antenore",
     "category": "Developer Tools",
     "capabilities": ["Interactive", "Read", "Write"],
@@ -33,6 +34,7 @@
       "Analyze this context for safe token savings with SemWitness.",
       "Simulate compression and verify the resulting proof bundle.",
       "Replay this fixture and compare its measured token cost.",
+      "Inspect this Compact Response contract, render its candidate locally, and verify the content-free witness.",
       "Evaluate this held-out promotion evidence and emit a manifest only if every gate passes.",
       "Evaluate this payload-free intent-cache evidence and emit a shadow qualification only if every gate passes.",
       "Create or inspect a shadow-only Cache Admission Passport Statement for this qualification.",

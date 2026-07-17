@@ -1,7 +1,7 @@
 {
   "name": "semwitness",
-  "version": "0.5.0-alpha.5",
-  "description": "Proof-carrying context optimization with promotion-gated JSON preparation and shadow intent-cache admission.",
+  "version": "0.6.0-alpha.1",
+  "description": "Proof-carrying context optimization, compact response rendering, and shadow intent-cache admission.",
   "type": "module",
   "license": "Apache-2.0",
   "author": "Antonio Antenore <ant_ant95@hotmail.it>",
@@ -16,16 +16,20 @@
   "keywords": [
     "agentic-ai",
     "ai-sdk-middleware",
+    "compact-output",
     "context-compression",
     "intent-normalization",
     "llm-evaluation",
     "prompt-compression",
     "semantic-cache",
-    "semantic-codec"
+    "semantic-codec",
+    "structured-output"
   ],
   "files": [
     "dist",
     "docs",
+    "examples/compact-response/change-report.candidate.json",
+    "examples/compact-response/change-report.contract.json",
     "examples/intent-witness.mjs",
     "examples/intent-normalizer.json",
     "examples/intent-normalizer-eval.jsonl",
@@ -49,6 +53,10 @@
     "./intent/openai-compatible": {
       "types": "./dist/adapters/openai-compatible-intent-compiler.d.ts",
       "import": "./dist/adapters/openai-compatible-intent-compiler.js"
+    },
+    "./response": {
+      "types": "./dist/response/index.d.ts",
+      "import": "./dist/response/index.js"
     },
     "./host": {
       "types": "./dist/host/index.d.ts",

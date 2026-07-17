@@ -33,6 +33,18 @@ const pluginRoot = fileURLToPath(
 const intentQualificationFixturePath = fileURLToPath(
   new URL('./fixtures/intent-cache-shadow-qualification.json', import.meta.url),
 );
+const compactResponseContractPath = fileURLToPath(
+  new URL(
+    '../examples/compact-response/change-report.contract.json',
+    import.meta.url,
+  ),
+);
+const compactResponseCandidatePath = fileURLToPath(
+  new URL(
+    '../examples/compact-response/change-report.candidate.json',
+    import.meta.url,
+  ),
+);
 const temporaryRoots = new Set<string>();
 
 interface BundleExecution {
@@ -236,8 +248,81 @@ describe('bundled Codex plugin', () => {
 
     expect(result).toEqual({
       code: 0,
-      stdout: '0.5.0-alpha.5\n',
+      stdout: '0.6.0-alpha.1\n',
       stderr: '',
+    });
+  });
+
+  it('renders and verifies Compact Response through an isolated plugin copy', async () => {
+    const root = await temporaryRoot();
+    const plugin = await copyIsolatedPlugin();
+    const contractPath = join(root, 'contract.json');
+    const candidatePath = join(root, 'candidate.json');
+    const renderedPath = join(root, 'rendered.md');
+    const witnessPath = join(root, 'witness.json');
+    await Promise.all([
+      cp(compactResponseContractPath, contractPath),
+      cp(compactResponseCandidatePath, candidatePath),
+    ]);
+
+    const inspection = await executeIsolatedBundle(
+      plugin,
+      'response',
+      'contract',
+      'inspect',
+      '--contract',
+      contractPath,
+    );
+    const render = await executeIsolatedBundle(
+      plugin,
+      'response',
+      'render',
+      '--contract',
+      contractPath,
+      '--candidate',
+      candidatePath,
+      '--out',
+      renderedPath,
+    );
+    await writeFile(witnessPath, render.stdout);
+    const verification = await executeIsolatedBundle(
+      plugin,
+      'response',
+      'verify',
+      '--contract',
+      contractPath,
+      '--candidate',
+      candidatePath,
+      '--rendered',
+      renderedPath,
+      '--witness',
+      witnessPath,
+    );
+
+    expect(inspection).toMatchObject({ code: 0, stderr: '' });
+    expect(JSON.parse(inspection.stdout)).toMatchObject({
+      schema: 'semwitness.dev/compact-response-contract-inspection/v1alpha1',
+      valid: true,
+      rendererAvailable: true,
+      billedOutputSavings: null,
+      universalSemanticEquivalence: false,
+    });
+    expect(render).toMatchObject({ code: 0, stderr: '' });
+    expect(render.stdout).not.toMatch(/\n$/u);
+    expect(JSON.parse(render.stdout)).toMatchObject({
+      schema: 'semwitness.dev/compact-response-witness/v1alpha1',
+      decision: 'rendered',
+      billedOutputSavings: null,
+      universalSemanticEquivalence: false,
+    });
+    expect(await readFile(renderedPath, 'utf8')).toContain('# Change report');
+    expect(verification).toMatchObject({ code: 0, stderr: '' });
+    expect(JSON.parse(verification.stdout)).toMatchObject({
+      schema: 'semwitness.dev/compact-response-verification/v1alpha1',
+      bound: true,
+      reasons: [],
+      billedOutputSavings: null,
+      universalSemanticEquivalence: false,
     });
   });
 

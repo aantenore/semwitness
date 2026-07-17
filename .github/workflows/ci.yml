@@ -67,8 +67,54 @@ jobs:
             | grep -Fx 'Usage: semwitness intent admission create [options]'
           "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" intent admission inspect --help \
             | grep -Fx 'Usage: semwitness intent admission inspect [options]'
+          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" response contract inspect --help \
+            | grep -Fx 'Usage: semwitness response contract inspect [options]'
+          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" response render --help \
+            | grep -Fx 'Usage: semwitness response render [options]'
+          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" response verify --help \
+            | grep -Fx 'Usage: semwitness response verify [options]'
+          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" response replay --help \
+            | grep -Fx 'Usage: semwitness response replay [options]'
           test -f "$RUNNER_TEMP/semwitness-install/node_modules/semwitness/dist/intent-host/index.js"
           test -f "$RUNNER_TEMP/semwitness-install/node_modules/semwitness/dist/intent-host/index.d.ts"
+          test -f "$RUNNER_TEMP/semwitness-install/node_modules/semwitness/dist/response/index.js"
+          test -f "$RUNNER_TEMP/semwitness-install/node_modules/semwitness/dist/response/index.d.ts"
+          compact_root="$RUNNER_TEMP/semwitness-install/node_modules/semwitness/examples/compact-response"
+          test -f "$compact_root/change-report.contract.json"
+          test -f "$compact_root/change-report.candidate.json"
+          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" response contract inspect \
+            --contract "$compact_root/change-report.contract.json" \
+            > "$RUNNER_TEMP/installed-response-inspection.json"
+          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" response render \
+            --contract "$compact_root/change-report.contract.json" \
+            --candidate "$compact_root/change-report.candidate.json" \
+            --out "$RUNNER_TEMP/installed-response.md" \
+            > "$RUNNER_TEMP/installed-response.witness.json"
+          "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" response verify \
+            --contract "$compact_root/change-report.contract.json" \
+            --candidate "$compact_root/change-report.candidate.json" \
+            --rendered "$RUNNER_TEMP/installed-response.md" \
+            --witness "$RUNNER_TEMP/installed-response.witness.json" \
+            > "$RUNNER_TEMP/installed-response-verification.json"
+          INSPECTION="$RUNNER_TEMP/installed-response-inspection.json" \
+          WITNESS="$RUNNER_TEMP/installed-response.witness.json" \
+          VERIFICATION="$RUNNER_TEMP/installed-response-verification.json" \
+          node --input-type=module -e '
+            const fs = await import("node:fs");
+            const inspection = JSON.parse(fs.readFileSync(process.env.INSPECTION, "utf8"));
+            const witnessSource = fs.readFileSync(process.env.WITNESS, "utf8");
+            const witness = JSON.parse(witnessSource);
+            const verification = JSON.parse(fs.readFileSync(process.env.VERIFICATION, "utf8"));
+            if (!inspection.valid || !inspection.rendererAvailable) {
+              throw new Error("installed Compact Response inspection failed");
+            }
+            if (witnessSource.endsWith("\n") || witness.decision !== "rendered") {
+              throw new Error("installed Compact Response witness is not exact");
+            }
+            if (!verification.bound || verification.reasons.length !== 0) {
+              throw new Error("installed Compact Response verification failed");
+            }
+          '
           cd "$RUNNER_TEMP/semwitness-install"
           QUALIFICATION_SOURCE="$GITHUB_WORKSPACE/test/fixtures/intent-cache-shadow-qualification.json" \
           QUALIFICATION_OUT="$RUNNER_TEMP/installed-qualification.json" \
@@ -178,6 +224,18 @@ jobs:
             const intent = await import("semwitness/intent");
             if (typeof intent.hmacCacheArtifactCommitments !== "function") {
               throw new Error("missing hmacCacheArtifactCommitments");
+            }
+            const response = await import("semwitness/response");
+            for (const name of [
+              "parseCompactResponseContract",
+              "digestCompactResponseContract",
+              "parseCompactResponseCandidate",
+              "createCompactResponseRuntime",
+              "createChangeReportMarkdownRenderer",
+              "parseCompactResponseWitness",
+              "serializeCompactResponseWitness"
+            ]) {
+              if (typeof response[name] !== "function") throw new Error(`missing ${name}`);
             }
           '
 
