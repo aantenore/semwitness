@@ -1,10 +1,6 @@
-import { Buffer } from 'node:buffer';
-import { types as utilTypes } from 'node:util';
-
 import { canonicalJson, toJsonValue } from '../domain/canonical-json.js';
 import { SemWitnessError } from '../domain/errors.js';
 import { hashCanonical, isSha256Digest, sha256 } from '../domain/hash.js';
-import { parseStrictJson } from '../domain/strict-json.js';
 import {
   SAFE_IDENTIFIER_PATTERN,
   SAFE_VERSION_PATTERN,
@@ -26,6 +22,15 @@ import {
   type IntentCacheAdmissionPassportStatement,
   type IntentCacheAdmissionPassportSubject,
 } from './cache-admission-passport-types.js';
+import {
+  createInTotoProfileParseContext,
+  digestExactInTotoPayload as digestExactPayload,
+  parseCanonicalRfc3339Utc,
+  parseInTotoProfileSource as parseProfileSource,
+  snapshotRequiredInTotoProfileRecord as snapshotRequiredRecord,
+  toCanonicalRfc3339Utc,
+  type InTotoProfileParseContext as StatementParseContext,
+} from './in-toto-profile.js';
 
 const ROOT_FIELDS = ['_type', 'subject', 'predicateType', 'predicate'] as const;
 const SUBJECT_FIELDS = ['name', 'digest'] as const;
@@ -74,15 +79,6 @@ const TENANT_HMAC = new RegExp(`^hmac-sha256:tenant:${HMAC_HEX}$`, 'u');
 const DOMAIN_HMAC = new RegExp(`^hmac-sha256:intent-domain:${HMAC_HEX}$`, 'u');
 const OPERATION_HMAC = new RegExp(`^hmac-sha256:operation:${HMAC_HEX}$`, 'u');
 const REVOCATION_HMAC = new RegExp(`^hmac-sha256:revocation:${HMAC_HEX}$`, 'u');
-const CANONICAL_RFC3339_UTC_PATTERN =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
-
-interface StatementParseContext {
-  extensionsPresent: boolean;
-  extensionItems: number;
-  readonly extensionObjects: WeakSet<object>;
-}
-
 interface ParsedStatementProfile {
   readonly statement: IntentCacheAdmissionPassportStatement;
   readonly extensionsPresent: boolean;
@@ -222,12 +218,15 @@ export function verifyIntentCacheAdmissionPassportStatementBinding(
 }
 
 function parseStatementProfile(source: unknown): ParsedStatementProfile {
-  const context: StatementParseContext = {
-    extensionsPresent: false,
-    extensionItems: 0,
-    extensionObjects: new WeakSet<object>(),
-  };
-  const statement = parseStatement(parseStatementSource(source), context);
+  const context = createInTotoProfileParseContext(statementJsonLimits());
+  const statement = parseStatement(
+    parseProfileSource(
+      source,
+      MAX_INTENT_CACHE_ADMISSION_PASSPORT_BYTES,
+      statementJsonLimits(),
+    ),
+    context,
+  );
   return Object.freeze({
     statement,
     extensionsPresent: context.extensionsPresent,
@@ -449,26 +448,6 @@ function parseArtifact(
   return Object.freeze({ id: root.id, version: root.version });
 }
 
-function parseStatementSource(source: unknown): unknown {
-  if (typeof source === 'string') {
-    if (
-      Buffer.byteLength(source, 'utf8') >
-      MAX_INTENT_CACHE_ADMISSION_PASSPORT_BYTES
-    ) {
-      throw malformedPassport();
-    }
-    return parseStrictJson(source, statementJsonLimits());
-  }
-  if (source instanceof Uint8Array) {
-    if (source.byteLength > MAX_INTENT_CACHE_ADMISSION_PASSPORT_BYTES) {
-      throw malformedPassport();
-    }
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(source);
-    return parseStrictJson(text, statementJsonLimits());
-  }
-  return source;
-}
-
 function statementJsonLimits() {
   return {
     maxDepth: 12,
@@ -476,177 +455,6 @@ function statementJsonLimits() {
     maxStringCodeUnits: 1_024,
     maxNumberCodeUnits: 32,
   } as const;
-}
-
-/**
- * Snapshot required fields without invoking accessors. Unknown fields are
- * accepted for in-toto monotonic extension compatibility, then discarded.
- */
-function snapshotRequiredRecord<const Field extends string>(
-  source: unknown,
-  requiredFields: readonly Field[],
-  maximumFields: number,
-  context: StatementParseContext,
-  recordDepth: number,
-): Readonly<Record<Field, unknown>> {
-  if (
-    utilTypes.isProxy(source) ||
-    source === null ||
-    typeof source !== 'object' ||
-    Array.isArray(source)
-  ) {
-    throw malformedPassport();
-  }
-  const prototype = Reflect.getPrototypeOf(source);
-  if (prototype !== Object.prototype && prototype !== null) {
-    throw malformedPassport();
-  }
-  const ownKeys = Reflect.ownKeys(source);
-  if (
-    ownKeys.length > maximumFields ||
-    ownKeys.some(
-      (key) =>
-        typeof key !== 'string' ||
-        key.length > statementJsonLimits().maxStringCodeUnits,
-    )
-  ) {
-    throw malformedPassport();
-  }
-
-  const values: Partial<Record<Field, unknown>> = Object.create(
-    null,
-  ) as Partial<Record<Field, unknown>>;
-  const required = new Set<string>(requiredFields);
-  for (const key of ownKeys as string[]) {
-    const descriptor = Reflect.getOwnPropertyDescriptor(source, key);
-    if (
-      descriptor === undefined ||
-      !descriptor.enumerable ||
-      !Object.hasOwn(descriptor, 'value') ||
-      Object.hasOwn(descriptor, 'get') ||
-      Object.hasOwn(descriptor, 'set')
-    ) {
-      throw malformedPassport();
-    }
-    if (required.has(key)) {
-      values[key as Field] = descriptor.value;
-    } else {
-      context.extensionsPresent = true;
-      validateExtensionValue(descriptor.value, context, recordDepth + 1);
-    }
-  }
-  if (requiredFields.some((field) => !Object.hasOwn(values, field))) {
-    throw malformedPassport();
-  }
-  return Object.freeze(values as Record<Field, unknown>);
-}
-
-function validateExtensionValue(
-  value: unknown,
-  context: StatementParseContext,
-  depth: number,
-): void {
-  context.extensionItems += 1;
-  if (
-    context.extensionItems > statementJsonLimits().maxItems ||
-    depth > statementJsonLimits().maxDepth
-  ) {
-    throw malformedPassport();
-  }
-  if (value === null || typeof value === 'boolean') return;
-  if (typeof value === 'string') {
-    if (value.length > statementJsonLimits().maxStringCodeUnits) {
-      throw malformedPassport();
-    }
-    return;
-  }
-  if (typeof value === 'number') {
-    if (
-      !Number.isFinite(value) ||
-      Object.is(value, -0) ||
-      (Number.isInteger(value) && !Number.isSafeInteger(value))
-    ) {
-      throw malformedPassport();
-    }
-    return;
-  }
-  if (
-    value === undefined ||
-    typeof value === 'bigint' ||
-    typeof value === 'function' ||
-    typeof value === 'symbol' ||
-    utilTypes.isProxy(value)
-  ) {
-    throw malformedPassport();
-  }
-  if (context.extensionObjects.has(value)) throw malformedPassport();
-  context.extensionObjects.add(value);
-  try {
-    if (Array.isArray(value)) {
-      const remaining = statementJsonLimits().maxItems - context.extensionItems;
-      const items = snapshotDenseDataArray(value, 0, remaining);
-      for (const item of items) {
-        validateExtensionValue(item, context, depth + 1);
-      }
-      return;
-    }
-    const prototype = Reflect.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-      throw malformedPassport();
-    }
-    const keys = Reflect.ownKeys(value);
-    if (
-      keys.length > statementJsonLimits().maxItems - context.extensionItems ||
-      keys.some(
-        (key) =>
-          typeof key !== 'string' ||
-          key.length > statementJsonLimits().maxStringCodeUnits,
-      )
-    ) {
-      throw malformedPassport();
-    }
-    for (const key of keys as string[]) {
-      context.extensionItems += 1;
-      const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
-      if (
-        context.extensionItems > statementJsonLimits().maxItems ||
-        descriptor === undefined ||
-        !descriptor.enumerable ||
-        !Object.hasOwn(descriptor, 'value') ||
-        Object.hasOwn(descriptor, 'get') ||
-        Object.hasOwn(descriptor, 'set')
-      ) {
-        throw malformedPassport();
-      }
-      validateExtensionValue(descriptor.value, context, depth + 1);
-    }
-  } finally {
-    context.extensionObjects.delete(value);
-  }
-}
-
-function parseCanonicalRfc3339Utc(value: unknown): string {
-  if (typeof value !== 'string' || !CANONICAL_RFC3339_UTC_PATTERN.test(value)) {
-    throw malformedPassport();
-  }
-  const instant = new Date(value);
-  if (!Number.isFinite(instant.getTime()) || instant.toISOString() !== value) {
-    throw malformedPassport();
-  }
-  return value;
-}
-
-function toCanonicalRfc3339Utc(epochMs: number): string {
-  const instant = new Date(epochMs);
-  if (!Number.isFinite(instant.getTime())) throw malformedPassport();
-  return parseCanonicalRfc3339Utc(instant.toISOString());
-}
-
-function digestExactPayload(source: unknown): Sha256Digest | null {
-  if (typeof source === 'string' || source instanceof Uint8Array) {
-    return sha256(source);
-  }
-  return null;
 }
 
 function malformedPassport(): SemWitnessError {
