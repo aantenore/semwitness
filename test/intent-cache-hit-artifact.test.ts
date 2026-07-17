@@ -9,13 +9,13 @@ import {
   type CacheHitWitness,
   verifyCacheHitWitnessArtifact,
 } from '../src/intent/index.js';
-import { createQualifyingIntentPromotionFixture } from './support/intent-promotion-qualification-fixture.js';
+import { createUnsafeHitIntentPromotionFixture } from './support/intent-promotion-qualification-fixture.js';
 
 let cachedWitness: CacheHitWitness | undefined;
 
 function witness() {
   if (cachedWitness !== undefined) return cachedWitness;
-  const candidate = createQualifyingIntentPromotionFixture().cases.find(
+  const candidate = createUnsafeHitIntentPromotionFixture().cases.find(
     (item) =>
       (item.kind === 'population-complete' ||
         item.kind === 'adversarial-complete') &&
