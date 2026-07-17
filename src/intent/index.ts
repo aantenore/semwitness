@@ -2,6 +2,7 @@ export * from './types.js';
 export * from './canonical.js';
 export * from './normalization.js';
 export * from './admission.js';
+export * from './cache-hit-artifact.js';
 export * from './normalizer-types.js';
 export * from './normalizer-schemas.js';
 export * from './declarative-normalizer.js';
