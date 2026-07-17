@@ -1,12 +1,19 @@
+import { Buffer } from 'node:buffer';
+import { types as utilTypes } from 'node:util';
+
 import { canonicalJson, toJsonValue } from '../domain/canonical-json.js';
 import { SemWitnessError } from '../domain/errors.js';
 import { hashCanonical, isSha256Digest, sha256 } from '../domain/hash.js';
 import type { Sha256Digest } from '../domain/types.js';
-import { snapshotDenseDataArray } from '../host/data-only.js';
+import {
+  snapshotDataRecord,
+  snapshotDenseDataArray,
+} from '../host/data-only.js';
 import {
   digestCacheHitWitnessArtifact,
   hmacCacheArtifactCommitments,
   hmacCacheKey,
+  MAX_CACHE_HIT_WITNESS_ARTIFACT_BYTES,
   parseCacheHitWitnessArtifact,
   parseNormalizationWitness,
   serializeCacheHitWitnessArtifact,
@@ -18,13 +25,18 @@ import {
   parseIntentCacheAdmissionPassportStatement,
   verifyIntentCacheAdmissionPassportStatementBinding,
 } from './cache-admission-passport.js';
-import { IN_TOTO_STATEMENT_V1_TYPE } from './cache-admission-passport-types.js';
+import {
+  IN_TOTO_STATEMENT_V1_TYPE,
+  MAX_INTENT_CACHE_ADMISSION_PASSPORT_BYTES,
+} from './cache-admission-passport-types.js';
 import {
   INTENT_CACHE_ADMISSION_DECISION_ARTIFACT,
   INTENT_CACHE_ADMISSION_DECISION_PASSPORT_SUBJECT_NAME,
   INTENT_CACHE_ADMISSION_DECISION_PREDICATE_TYPE,
   INTENT_CACHE_ADMISSION_DECISION_WITNESS_SUBJECT_NAME,
   MAX_INTENT_CACHE_ADMISSION_DECISION_BYTES,
+  MAX_INTENT_CACHE_ADMISSION_SECRET_BYTES,
+  MAX_INTENT_CACHE_ADMISSION_VALUE_BYTES,
   type IntentCacheAdmissionDecisionBindingVerification,
   type IntentCacheAdmissionDecisionEvidence,
   type IntentCacheAdmissionDecisionPredicate,
@@ -72,7 +84,7 @@ const LINEAGE_FIELDS = [
   'entrySourceBindingDigest',
 ] as const;
 const SCOPE_FIELDS = [
-  'deploymentScopeDigest',
+  'qualificationDeploymentScopeDigest',
   'cacheNamespace',
   'tenant',
   'principal',
@@ -91,7 +103,7 @@ const CANDIDATE_FIELDS = [
 const CONTRACT_FIELDS = [
   'cacheAdmissionPolicyDigest',
   'normalizationPolicyDigest',
-  'dependenciesDigest',
+  'qualificationDependenciesDigest',
 ] as const;
 const PRIVACY_FIELDS = [
   'sourceDigest',
@@ -99,6 +111,25 @@ const PRIVACY_FIELDS = [
   'valueContentIncluded',
   'rawIdentifiersIncluded',
 ] as const;
+const EVIDENCE_FIELDS = [
+  'passport',
+  'qualification',
+  'cacheHitWitness',
+  'normalizationWitness',
+  'operationBinding',
+  'entrySourceBinding',
+  'cacheKeySecret',
+  'value',
+] as const;
+
+const TYPED_ARRAY_BUFFER_GETTER = Reflect.getOwnPropertyDescriptor(
+  Reflect.getPrototypeOf(Uint8Array.prototype) as object,
+  'buffer',
+)?.get;
+const TYPED_ARRAY_BYTE_LENGTH_GETTER = Reflect.getOwnPropertyDescriptor(
+  Reflect.getPrototypeOf(Uint8Array.prototype) as object,
+  'byteLength',
+)?.get;
 
 const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/u;
 const HMAC_HEX = '[a-f0-9]{64}';
@@ -135,8 +166,8 @@ export function createIntentCacheAdmissionDecisionStatement(
   evidence: IntentCacheAdmissionDecisionEvidence,
 ): IntentCacheAdmissionDecisionStatement {
   try {
-    return parseIntentCacheAdmissionDecisionStatement(
-      deriveDecisionStatement(evidence),
+    return createDecisionStatementFromSnapshot(
+      snapshotDecisionEvidence(evidence),
     );
   } catch {
     throw malformedDecision();
@@ -174,19 +205,27 @@ export function verifyIntentCacheAdmissionDecisionStatementBinding(
   evidence: IntentCacheAdmissionDecisionEvidence,
 ): IntentCacheAdmissionDecisionBindingVerification {
   let parsed: ParsedDecisionProfile;
+  let statementSnapshot: unknown;
+  let evidenceSnapshot: IntentCacheAdmissionDecisionEvidence;
+  let expected: IntentCacheAdmissionDecisionStatement;
   try {
-    parsed = parseDecisionProfile(statementSource);
+    statementSnapshot = snapshotPayloadSource(
+      statementSource,
+      MAX_INTENT_CACHE_ADMISSION_DECISION_BYTES,
+    );
+    evidenceSnapshot = snapshotDecisionEvidence(evidence);
+    parsed = parseDecisionProfileSnapshot(statementSnapshot);
+    expected = createDecisionStatementFromSnapshot(evidenceSnapshot);
   } catch {
     throw malformedDecision();
   }
-  const expected = createIntentCacheAdmissionDecisionStatement(evidence);
   const canonicalProfileDigest =
     digestIntentCacheAdmissionDecisionCanonicalProfile(parsed.statement);
-  const payloadDigest = digestExactInTotoPayload(statementSource);
+  const payloadDigest = digestExactInTotoPayload(statementSnapshot);
   const canonicalPayload =
     payloadDigest === null ? null : payloadDigest === canonicalProfileDigest;
-  const suppliedPassportPayloadDigest = sha256(evidence.passport);
-  const suppliedWitnessPayloadDigest = sha256(evidence.cacheHitWitness);
+  const suppliedPassportPayloadDigest = sha256(evidenceSnapshot.passport);
+  const suppliedWitnessPayloadDigest = sha256(evidenceSnapshot.cacheHitWitness);
   const passportSubject = parsed.statement.subject[0];
   const witnessSubject = parsed.statement.subject[1];
   const profileBound =
@@ -208,6 +247,85 @@ export function verifyIntentCacheAdmissionDecisionStatementBinding(
     suppliedWitnessPayloadDigest,
     servingAuthority: 'none',
   });
+}
+
+function createDecisionStatementFromSnapshot(
+  evidence: IntentCacheAdmissionDecisionEvidence,
+): IntentCacheAdmissionDecisionStatement {
+  return parseIntentCacheAdmissionDecisionStatement(
+    deriveDecisionStatement(evidence),
+  );
+}
+
+function snapshotDecisionEvidence(
+  source: unknown,
+): IntentCacheAdmissionDecisionEvidence {
+  const root = snapshotDataRecord(source, EVIDENCE_FIELDS);
+  return Object.freeze({
+    passport: snapshotBytesOrString(
+      root.passport,
+      MAX_INTENT_CACHE_ADMISSION_PASSPORT_BYTES,
+    ),
+    qualification: root.qualification,
+    cacheHitWitness: snapshotBytesOrString(
+      root.cacheHitWitness,
+      MAX_CACHE_HIT_WITNESS_ARTIFACT_BYTES,
+    ),
+    normalizationWitness: root.normalizationWitness,
+    operationBinding: root.operationBinding,
+    entrySourceBinding: root.entrySourceBinding,
+    cacheKeySecret: snapshotBytesOrString(
+      root.cacheKeySecret,
+      MAX_INTENT_CACHE_ADMISSION_SECRET_BYTES,
+    ),
+    value: snapshotBytesOrString(
+      root.value,
+      MAX_INTENT_CACHE_ADMISSION_VALUE_BYTES,
+    ),
+  });
+}
+
+function snapshotPayloadSource(source: unknown, maximumBytes: number): unknown {
+  if (typeof source === 'string') {
+    if (Buffer.byteLength(source, 'utf8') > maximumBytes) {
+      throw malformedDecision();
+    }
+    return source;
+  }
+  if (utilTypes.isProxy(source)) throw malformedDecision();
+  return utilTypes.isUint8Array(source)
+    ? snapshotBytes(source, maximumBytes)
+    : source;
+}
+
+function snapshotBytesOrString(
+  source: unknown,
+  maximumBytes: number,
+): string | Uint8Array {
+  if (typeof source === 'string') {
+    if (Buffer.byteLength(source, 'utf8') > maximumBytes) {
+      throw malformedDecision();
+    }
+    return source;
+  }
+  if (utilTypes.isProxy(source) || !utilTypes.isUint8Array(source)) {
+    throw malformedDecision();
+  }
+  return snapshotBytes(source, maximumBytes);
+}
+
+function snapshotBytes(source: Uint8Array, maximumBytes: number): Uint8Array {
+  if (
+    TYPED_ARRAY_BUFFER_GETTER === undefined ||
+    TYPED_ARRAY_BYTE_LENGTH_GETTER === undefined
+  ) {
+    throw malformedDecision();
+  }
+  const buffer = Reflect.apply(TYPED_ARRAY_BUFFER_GETTER, source, []);
+  if (utilTypes.isSharedArrayBuffer(buffer)) throw malformedDecision();
+  const byteLength = Reflect.apply(TYPED_ARRAY_BYTE_LENGTH_GETTER, source, []);
+  if (byteLength > maximumBytes) throw malformedDecision();
+  return new Uint8Array(source);
 }
 
 function deriveDecisionStatement(
@@ -338,7 +456,8 @@ function deriveDecisionStatement(
       entrySourceBindingDigest: entrySource.bindingDigest,
     },
     scope: {
-      deploymentScopeDigest: passport.predicate.scope.deploymentScopeDigest,
+      qualificationDeploymentScopeDigest:
+        passport.predicate.scope.deploymentScopeDigest,
       cacheNamespace: passport.predicate.scope.cacheNamespace,
       tenant: passport.predicate.scope.tenant,
       principal: binding.scope.principal,
@@ -359,7 +478,7 @@ function deriveDecisionStatement(
         passport.predicate.contracts.cacheAdmissionPolicyDigest,
       normalizationPolicyDigest:
         passport.predicate.contracts.normalizationPolicyDigest,
-      dependenciesDigest,
+      qualificationDependenciesDigest: dependenciesDigest,
     },
     privacy: {
       sourceDigest:
@@ -398,6 +517,12 @@ function subject(
 }
 
 function parseDecisionProfile(source: unknown): ParsedDecisionProfile {
+  return parseDecisionProfileSnapshot(
+    snapshotPayloadSource(source, MAX_INTENT_CACHE_ADMISSION_DECISION_BYTES),
+  );
+}
+
+function parseDecisionProfileSnapshot(source: unknown): ParsedDecisionProfile {
   const limits = decisionJsonLimits();
   const context = createInTotoProfileParseContext(limits);
   const statement = parseStatement(
@@ -533,7 +658,7 @@ function parseScope(
 ): IntentCacheAdmissionDecisionPredicate['scope'] {
   const root = record(source, SCOPE_FIELDS, 24, context, 2);
   if (
-    !isSha256Digest(root.deploymentScopeDigest) ||
+    !isSha256Digest(root.qualificationDeploymentScopeDigest) ||
     !matches(root.cacheNamespace, CACHE_NAMESPACE_HMAC) ||
     !matches(root.tenant, TENANT_HMAC) ||
     !matches(root.principal, PRINCIPAL_HMAC) ||
@@ -545,7 +670,7 @@ function parseScope(
     throw malformedDecision();
   }
   return Object.freeze({
-    deploymentScopeDigest: root.deploymentScopeDigest,
+    qualificationDeploymentScopeDigest: root.qualificationDeploymentScopeDigest,
     cacheNamespace:
       root.cacheNamespace as IntentCacheAdmissionDecisionPredicate['scope']['cacheNamespace'],
     tenant:

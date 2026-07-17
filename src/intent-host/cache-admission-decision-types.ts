@@ -14,7 +14,7 @@ import type {
 } from './types.js';
 
 export const INTENT_CACHE_ADMISSION_DECISION_PREDICATE_TYPE =
-  'https://github.com/aantenore/semwitness/blob/main/docs/attestations/cache-admission-decision/v0.1.md' as const;
+  'https://github.com/aantenore/semwitness/blob/v0.5.0-alpha.5/docs/attestations/cache-admission-decision/v0.1.md' as const;
 export const INTENT_CACHE_ADMISSION_DECISION_DSSE_PAYLOAD_TYPE =
   'application/vnd.in-toto+json' as const;
 export const INTENT_CACHE_ADMISSION_DECISION_PASSPORT_SUBJECT_NAME =
@@ -26,6 +26,8 @@ export const INTENT_CACHE_ADMISSION_DECISION_ARTIFACT = Object.freeze({
   version: '0.1.0',
 } as const);
 export const MAX_INTENT_CACHE_ADMISSION_DECISION_BYTES = 32 * 1024;
+export const MAX_INTENT_CACHE_ADMISSION_SECRET_BYTES = 4 * 1024;
+export const MAX_INTENT_CACHE_ADMISSION_VALUE_BYTES = 8 * 1024 * 1024;
 
 export interface IntentCacheAdmissionDecisionSubject {
   readonly name:
@@ -54,7 +56,8 @@ export interface IntentCacheAdmissionDecisionPredicate {
     readonly entrySourceBindingDigest: Sha256Digest;
   };
   readonly scope: {
-    readonly deploymentScopeDigest: Sha256Digest;
+    /** Qualification scope declared by the exact Passport, not hit-runtime proof. */
+    readonly qualificationDeploymentScopeDigest: Sha256Digest;
     readonly cacheNamespace: IntentCacheNamespaceHmac;
     readonly tenant: IntentCacheTenantHmac;
     readonly principal: HmacScopeDigest<'principal'>;
@@ -73,7 +76,8 @@ export interface IntentCacheAdmissionDecisionPredicate {
   readonly contracts: {
     readonly cacheAdmissionPolicyDigest: Sha256Digest;
     readonly normalizationPolicyDigest: Sha256Digest;
-    readonly dependenciesDigest: Sha256Digest;
+    /** Full qualification inventory declared by the exact Passport. */
+    readonly qualificationDependenciesDigest: Sha256Digest;
   };
   readonly privacy: {
     readonly sourceDigest: HmacIntentSourceDigest;

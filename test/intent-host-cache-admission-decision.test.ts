@@ -4,7 +4,12 @@ import { readFile } from 'node:fs/promises';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { sha256 } from '../src/domain/hash.js';
-import { serializeCacheHitWitnessArtifact } from '../src/intent/index.js';
+import {
+  MAX_CACHE_HIT_WITNESS_ARTIFACT_BYTES,
+  hmacCacheArtifactCommitments,
+  parseCacheHitWitnessArtifact,
+  serializeCacheHitWitnessArtifact,
+} from '../src/intent/index.js';
 import {
   INTENT_CACHE_ADMISSION_DECISION_ARTIFACT,
   INTENT_CACHE_ADMISSION_DECISION_DSSE_PAYLOAD_TYPE,
@@ -12,6 +17,9 @@ import {
   INTENT_CACHE_ADMISSION_DECISION_PREDICATE_TYPE,
   INTENT_CACHE_ADMISSION_DECISION_WITNESS_SUBJECT_NAME,
   MAX_INTENT_CACHE_ADMISSION_DECISION_BYTES,
+  MAX_INTENT_CACHE_ADMISSION_PASSPORT_BYTES,
+  MAX_INTENT_CACHE_ADMISSION_SECRET_BYTES,
+  MAX_INTENT_CACHE_ADMISSION_VALUE_BYTES,
   createIntentCacheAdmissionDecisionStatement,
   createIntentCacheAdmissionPassportStatement,
   digestIntentCacheAdmissionDecisionCanonicalProfile,
@@ -32,7 +40,7 @@ import { createUnsafeHitIntentPromotionFixture } from './support/intent-promotio
 const CACHE_KEY_SECRET = '0123456789abcdef0123456789abcdef';
 const CANDIDATE_VALUE = 'candidate-artifact:true';
 const GOLDEN_DECISION_DIGEST =
-  'sha256:ccc7327ba9ef0ebf1c54bd0efbc0f9408dd6eb777a8709ab2d65e4ce50580f2b';
+  'sha256:cd59cc61a2f8a755edf8fb31886c438bf0f2def597e02849734db4c51bfd9187';
 const GOLDEN_PASSPORT_PAYLOAD_DIGEST =
   'sha256:323b9a45fccd2b3e42c06d448c24c7adf1e340ca3f7ce0753882aba4bf611287';
 const GOLDEN_WITNESS_PAYLOAD_DIGEST =
@@ -54,6 +62,18 @@ function withEvidence(
   overrides: Partial<IntentCacheAdmissionDecisionEvidence>,
 ): IntentCacheAdmissionDecisionEvidence {
   return { ...evidence, ...overrides };
+}
+
+function withChangedQualification(
+  mutate: (qualification: Record<string, any>) => void,
+): IntentCacheAdmissionDecisionEvidence {
+  const changed = mutable(evidence.qualification);
+  mutate(changed);
+  const qualification = parseIntentCacheShadowQualificationManifest(changed);
+  const passport = serializeIntentCacheAdmissionPassportStatement(
+    createIntentCacheAdmissionPassportStatement(qualification),
+  );
+  return withEvidence({ qualification, passport });
 }
 
 function mismatchedOperationBinding(): unknown {
@@ -142,7 +162,7 @@ describe('intent-cache Admission Decision Statement', () => {
       },
     });
     expect(INTENT_CACHE_ADMISSION_DECISION_PREDICATE_TYPE).toBe(
-      'https://github.com/aantenore/semwitness/blob/main/docs/attestations/cache-admission-decision/v0.1.md',
+      'https://github.com/aantenore/semwitness/blob/v0.5.0-alpha.5/docs/attestations/cache-admission-decision/v0.1.md',
     );
     expect(INTENT_CACHE_ADMISSION_DECISION_DSSE_PAYLOAD_TYPE).toBe(
       'application/vnd.in-toto+json',
@@ -161,7 +181,7 @@ describe('intent-cache Admission Decision Statement', () => {
         },
       },
     ]);
-    expect(Buffer.byteLength(serialized, 'utf8')).toBe(2_977);
+    expect(Buffer.byteLength(serialized, 'utf8')).toBe(3_013);
     expect(serialized.endsWith('\n')).toBe(false);
     expect(digestIntentCacheAdmissionDecisionCanonicalProfile(statement)).toBe(
       GOLDEN_DECISION_DIGEST,
@@ -307,6 +327,165 @@ describe('intent-cache Admission Decision Statement', () => {
     }
   });
 
+  it('rejects valid re-digested qualification mismatches at every shared cross-link', () => {
+    const crossLinkMutations: readonly [
+      string,
+      (qualification: Record<string, any>) => void,
+    ][] = [
+      [
+        'cache namespace',
+        (qualification) => {
+          qualification.scope.cacheNamespace = `hmac-sha256:cache-namespace:${'8'.repeat(64)}`;
+        },
+      ],
+      [
+        'tenant',
+        (qualification) => {
+          qualification.scope.tenant = `hmac-sha256:tenant:${'8'.repeat(64)}`;
+        },
+      ],
+      [
+        'cache-admission policy',
+        (qualification) => {
+          qualification.intentContract.cacheAdmissionPolicyDigest = sha256(
+            'other-cache-admission-policy',
+          );
+        },
+      ],
+      [
+        'normalization policy',
+        (qualification) => {
+          qualification.intentContract.normalizationPolicyDigest = sha256(
+            'other-normalization-policy',
+          );
+        },
+      ],
+      [
+        'normalizer',
+        (qualification) => {
+          qualification.intentContract.normalizer.artifactDigest = sha256(
+            'other-normalizer-artifact',
+          );
+        },
+      ],
+      [
+        'ontology',
+        (qualification) => {
+          qualification.intentContract.ontology.digest =
+            sha256('other-ontology');
+        },
+      ],
+      [
+        'operation registry',
+        (qualification) => {
+          qualification.intentContract.operationRegistry.digest = sha256(
+            'other-operation-registry',
+          );
+        },
+      ],
+      [
+        'planner',
+        (qualification) => {
+          qualification.dependencies.planner.artifact.digest =
+            sha256('other-planner');
+        },
+      ],
+      [
+        'tool registry',
+        (qualification) => {
+          qualification.dependencies.tool.artifact.digest = sha256(
+            'other-tool-registry',
+          );
+        },
+      ],
+    ];
+    for (const [label, mutate] of crossLinkMutations) {
+      expect(
+        () =>
+          createIntentCacheAdmissionDecisionStatement(
+            withChangedQualification(mutate),
+          ),
+        label,
+      ).toThrow(/Malformed intent-cache Admission Decision Statement/u);
+    }
+  });
+
+  it('labels Passport-only scope and inventory declarations without claiming per-hit proof', () => {
+    const deploymentScopeDigest = sha256('other-deployment-scope');
+    const providerDigest = sha256('other-provider-runtime');
+    const changedScope = createIntentCacheAdmissionDecisionStatement(
+      withChangedQualification((qualification) => {
+        qualification.deploymentScopeDigest = deploymentScopeDigest;
+      }),
+    );
+    const changedProvider = createIntentCacheAdmissionDecisionStatement(
+      withChangedQualification((qualification) => {
+        qualification.dependencies.provider.artifact.digest = providerDigest;
+      }),
+    );
+
+    expect(
+      changedScope.predicate.scope.qualificationDeploymentScopeDigest,
+    ).toBe(deploymentScopeDigest);
+    expect(changedScope.subject[1]).toEqual(statement.subject[1]);
+    expect(changedProvider.predicate.contracts).not.toEqual(
+      statement.predicate.contracts,
+    );
+    expect(changedProvider.subject[1]).toEqual(statement.subject[1]);
+    expect('deploymentScopeDigest' in changedScope.predicate.scope).toBe(false);
+    expect('dependenciesDigest' in changedProvider.predicate.contracts).toBe(
+      false,
+    );
+  });
+
+  it('proves cache-artifact HMAC domain separation and input binding', () => {
+    const hit = parseCacheHitWitnessArtifact(evidence.cacheHitWitness);
+    const binding = hit.lookup.binding;
+    const sameDigest = sha256('same-entry-and-value');
+    const baseline = hmacCacheArtifactCommitments(
+      CACHE_KEY_SECRET,
+      binding,
+      sameDigest,
+      sameDigest,
+    );
+    expect(baseline.entry.slice('hmac-sha256:cache-entry:'.length)).not.toBe(
+      baseline.value.slice('hmac-sha256:cache-value:'.length),
+    );
+
+    const changedSecret = hmacCacheArtifactCommitments(
+      'fedcba9876543210fedcba9876543210',
+      binding,
+      sameDigest,
+      sameDigest,
+    );
+    const changedBinding = hmacCacheArtifactCommitments(
+      CACHE_KEY_SECRET,
+      {
+        ...binding,
+        contextDigest: `hmac-sha256:context:${'8'.repeat(64)}`,
+      },
+      sameDigest,
+      sameDigest,
+    );
+    const changedDigest = hmacCacheArtifactCommitments(
+      CACHE_KEY_SECRET,
+      binding,
+      sha256('other-entry'),
+      sha256('other-value'),
+    );
+    expect(changedSecret).not.toEqual(baseline);
+    expect(changedBinding).not.toEqual(baseline);
+    expect(changedDigest).not.toEqual(baseline);
+    expect(() =>
+      hmacCacheArtifactCommitments(
+        'weak-secret',
+        binding,
+        sameDigest,
+        sameDigest,
+      ),
+    ).toThrow(/at least 32 bytes/u);
+  });
+
   it('distinguishes well-formed profile tampering from invalid escalation attempts', () => {
     const profileMutations: readonly ((value: Record<string, any>) => void)[] =
       [
@@ -325,7 +504,7 @@ describe('intent-cache Admission Decision Statement', () => {
           value.predicate.candidate.entryCommitment = `hmac-sha256:cache-entry:${'0'.repeat(64)}`;
         },
         (value) => {
-          value.predicate.contracts.dependenciesDigest =
+          value.predicate.contracts.qualificationDependenciesDigest =
             sha256('other-dependencies');
         },
         (value) => {
@@ -382,6 +561,164 @@ describe('intent-cache Admission Decision Statement', () => {
         /Malformed intent-cache Admission Decision Statement/u,
       );
     }
+  });
+
+  it('snapshots the complete evidence record without invoking untrusted code', () => {
+    let proxyTrapCalls = 0;
+    const proxiedEvidence = new Proxy(
+      { ...evidence },
+      {
+        ownKeys(target) {
+          proxyTrapCalls += 1;
+          return Reflect.ownKeys(target);
+        },
+      },
+    );
+    expect(() =>
+      createIntentCacheAdmissionDecisionStatement(proxiedEvidence),
+    ).toThrow(/Malformed intent-cache Admission Decision Statement/u);
+    expect(proxyTrapCalls).toBe(0);
+
+    let secretGetterCalls = 0;
+    const accessorEvidence = { ...evidence };
+    Object.defineProperty(accessorEvidence, 'cacheKeySecret', {
+      enumerable: true,
+      get() {
+        secretGetterCalls += 1;
+        return secretGetterCalls % 2 === 1
+          ? CACHE_KEY_SECRET
+          : 'fedcba9876543210fedcba9876543210';
+      },
+    });
+    expect(() =>
+      createIntentCacheAdmissionDecisionStatement(
+        accessorEvidence as IntentCacheAdmissionDecisionEvidence,
+      ),
+    ).toThrow(/Malformed intent-cache Admission Decision Statement/u);
+    expect(secretGetterCalls).toBe(0);
+
+    const extraEvidence = { ...evidence, unexpected: true };
+    const missingEvidence = { ...evidence } as Record<string, unknown>;
+    delete missingEvidence.value;
+    const hiddenEvidence = { ...evidence };
+    Object.defineProperty(hiddenEvidence, 'value', {
+      configurable: true,
+      enumerable: false,
+      value: CANDIDATE_VALUE,
+      writable: true,
+    });
+    const inheritedEvidence = Object.assign(
+      Object.create({ inherited: true }) as Record<string, unknown>,
+      evidence,
+    );
+    for (const candidate of [
+      extraEvidence,
+      missingEvidence,
+      hiddenEvidence,
+      inheritedEvidence,
+    ]) {
+      expect(() =>
+        createIntentCacheAdmissionDecisionStatement(
+          candidate as unknown as IntentCacheAdmissionDecisionEvidence,
+        ),
+      ).toThrow(/Malformed intent-cache Admission Decision Statement/u);
+    }
+  });
+
+  it('copies byte evidence and exact Statement bytes through intrinsic state only', () => {
+    const secretBytes = new TextEncoder().encode(CACHE_KEY_SECRET);
+    const passportBytes = new TextEncoder().encode(evidence.passport as string);
+    const witnessBytes = new TextEncoder().encode(
+      evidence.cacheHitWitness as string,
+    );
+    const valueBytes = new TextEncoder().encode(CANDIDATE_VALUE);
+    const statementBytes = new TextEncoder().encode(serialized);
+    let shadowedBufferGetterCalls = 0;
+    for (const bytes of [
+      secretBytes,
+      passportBytes,
+      witnessBytes,
+      valueBytes,
+      statementBytes,
+    ]) {
+      Object.defineProperty(bytes, 'buffer', {
+        configurable: true,
+        get() {
+          shadowedBufferGetterCalls += 1;
+          throw new TypeError('must never be invoked');
+        },
+      });
+    }
+
+    const byteEvidence = withEvidence({
+      passport: passportBytes,
+      cacheHitWitness: witnessBytes,
+      cacheKeySecret: secretBytes,
+      value: valueBytes,
+    });
+    expect(
+      serializeIntentCacheAdmissionDecisionStatement(
+        createIntentCacheAdmissionDecisionStatement(byteEvidence),
+      ),
+    ).toBe(serialized);
+    expect(
+      verifyIntentCacheAdmissionDecisionStatementBinding(
+        statementBytes,
+        byteEvidence,
+      ),
+    ).toMatchObject({
+      bound: true,
+      profileBound: true,
+      canonicalPayload: true,
+      statementPassportPayloadDigest: GOLDEN_PASSPORT_PAYLOAD_DIGEST,
+      suppliedPassportPayloadDigest: GOLDEN_PASSPORT_PAYLOAD_DIGEST,
+      statementWitnessPayloadDigest: GOLDEN_WITNESS_PAYLOAD_DIGEST,
+      suppliedWitnessPayloadDigest: GOLDEN_WITNESS_PAYLOAD_DIGEST,
+    });
+    expect(shadowedBufferGetterCalls).toBe(0);
+  });
+
+  it('rejects SharedArrayBuffer-backed evidence instead of accepting a racy snapshot', () => {
+    if (typeof SharedArrayBuffer === 'undefined') return;
+    const sharedSecret = new Uint8Array(
+      new SharedArrayBuffer(Buffer.byteLength(CACHE_KEY_SECRET, 'utf8')),
+    );
+    sharedSecret.set(new TextEncoder().encode(CACHE_KEY_SECRET));
+    expect(() =>
+      createIntentCacheAdmissionDecisionStatement(
+        withEvidence({ cacheKeySecret: sharedSecret }),
+      ),
+    ).toThrow(/Malformed intent-cache Admission Decision Statement/u);
+  });
+
+  it('enforces every byte limit before accepting exact payload inputs', () => {
+    const oversizedEvidence: readonly IntentCacheAdmissionDecisionEvidence[] = [
+      withEvidence({
+        passport: 'p'.repeat(MAX_INTENT_CACHE_ADMISSION_PASSPORT_BYTES + 1),
+      }),
+      withEvidence({
+        cacheHitWitness: new Uint8Array(
+          MAX_CACHE_HIT_WITNESS_ARTIFACT_BYTES + 1,
+        ),
+      }),
+      withEvidence({
+        cacheKeySecret: 's'.repeat(MAX_INTENT_CACHE_ADMISSION_SECRET_BYTES + 1),
+      }),
+      withEvidence({
+        value: new Uint8Array(MAX_INTENT_CACHE_ADMISSION_VALUE_BYTES + 1),
+      }),
+    ];
+    for (const candidate of oversizedEvidence) {
+      expect(() =>
+        createIntentCacheAdmissionDecisionStatement(candidate),
+      ).toThrow(/Malformed intent-cache Admission Decision Statement/u);
+    }
+    expect(() =>
+      verifyIntentCacheAdmissionDecisionStatementBinding(
+        new Uint8Array(MAX_INTENT_CACHE_ADMISSION_DECISION_BYTES + 1),
+        evidence,
+      ),
+    ).toThrow(/Malformed intent-cache Admission Decision Statement/u);
   });
 
   it('stays content-free and rejects ambiguous or unsafe parser inputs', () => {
