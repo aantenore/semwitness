@@ -103,6 +103,10 @@ export type HmacScopeDigest<Domain extends ScopeDomain = ScopeDomain> =
 /** A deployment-keyed cache key; it is never an authorization credential. */
 export type CacheKeyDigest = `hmac-sha256:cache-key:${string}`;
 
+/** Keyed, scope-bound commitments for content-addressed cache artifacts. */
+export type CacheEntryCommitment = `hmac-sha256:cache-entry:${string}`;
+export type CacheValueCommitment = `hmac-sha256:cache-value:${string}`;
+
 /** A keyed source fingerprint avoids equality leaks for low-entropy prompts. */
 export type HmacIntentSourceDigest = `hmac-sha256:intent-source:${string}`;
 export type IntentSourceDigest = Sha256Digest | HmacIntentSourceDigest;

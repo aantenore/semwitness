@@ -4,6 +4,8 @@ export * from './receipts.js';
 export * from './promotion-evidence.js';
 export * from './cache-admission-passport-types.js';
 export * from './cache-admission-passport.js';
+export * from './cache-admission-decision-types.js';
+export * from './cache-admission-decision.js';
 export {
   INTENT_CACHE_PROMOTION_EVALUATOR_ARTIFACT,
   INTENT_CACHE_PROMOTION_GATE_REASONS,

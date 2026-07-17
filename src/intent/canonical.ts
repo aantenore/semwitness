@@ -7,13 +7,15 @@ import {
   type JsonValue,
 } from '../domain/canonical-json.js';
 import { compareCodeUnits } from '../domain/deterministic-order.js';
-import { hashCanonical, sha256 } from '../domain/hash.js';
+import { hashCanonical, isSha256Digest, sha256 } from '../domain/hash.js';
 import type { Sha256Digest } from '../domain/types.js';
 import { parseIntentIRDocument } from './schemas.js';
 import { parseCacheBindingDocument } from './schemas.js';
 import {
   type CacheBinding,
+  type CacheEntryCommitment,
   type CacheKeyDigest,
+  type CacheValueCommitment,
   type CandidateEvidence,
   type HmacScopeDigest,
   type IntentConstraint,
@@ -27,6 +29,8 @@ import { assertWellFormedUnicode } from './unicode.js';
 
 const SCOPE_HMAC_PREFIX = 'semwitness.dev/intent-scope-hmac/v1\0';
 const CACHE_KEY_HMAC_PREFIX = 'semwitness.dev/intent-cache-key/v1\0';
+const CACHE_ARTIFACT_HMAC_PREFIX =
+  'semwitness.dev/intent-cache-artifact-commitment/v1\0';
 const SOURCE_HMAC_PREFIX = 'semwitness.dev/intent-source-hmac/v1\0';
 
 export function parseIntentIR(input: unknown): IntentIR {
@@ -115,6 +119,43 @@ export function hmacCacheKey(
     .update(canonicalBinding, 'utf8')
     .digest('hex');
   return `hmac-sha256:cache-key:${digest}`;
+}
+
+/**
+ * Produces keyed entry and value commitments bound to the complete cache
+ * binding. They resist public dictionary attacks but remain linkable wherever
+ * the same secret and binding are reused. Domain separation keeps the two
+ * commitments non-interchangeable.
+ */
+export function hmacCacheArtifactCommitments(
+  secret: Uint8Array | string,
+  binding: CacheBinding,
+  entryDigest: Sha256Digest,
+  valueDigest: Sha256Digest,
+): Readonly<{
+  entry: CacheEntryCommitment;
+  value: CacheValueCommitment;
+}> {
+  const secretBytes = validateHmacSecret(secret);
+  if (!isSha256Digest(entryDigest) || !isSha256Digest(valueDigest)) {
+    throw new TypeError('Cache artifact digests must be SHA-256 digests');
+  }
+  const canonicalBinding = canonicalJson(
+    toJsonValue(parseCacheBindingDocument(binding)),
+  );
+  const commit = (domain: 'entry' | 'value', digest: Sha256Digest): string =>
+    createHmac('sha256', secretBytes)
+      .update(CACHE_ARTIFACT_HMAC_PREFIX, 'utf8')
+      .update(domain, 'utf8')
+      .update('\0', 'utf8')
+      .update(canonicalBinding, 'utf8')
+      .update('\0', 'utf8')
+      .update(digest, 'utf8')
+      .digest('hex');
+  return Object.freeze({
+    entry: `hmac-sha256:cache-entry:${commit('entry', entryDigest)}`,
+    value: `hmac-sha256:cache-value:${commit('value', valueDigest)}`,
+  });
 }
 
 export function canonicalizeRevisions(
