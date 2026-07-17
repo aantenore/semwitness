@@ -581,5 +581,8 @@ cannot deliver a cached value.
 ## Delivery
 
 Use atomic commits on a feature branch, open a pull request, wait for all checks,
-and consolidate on `main`. Do not create a tag or publish a package from this
-increment.
+and consolidate on `main`. The original Workbench-only increment did not create
+a tag or publish a package. Its later integration with the Cache Admission
+Passport and Decision Statement is released under the separately reviewed,
+immutable `v0.5.0-alpha.5` protocol tag; that tag does not change the
+Workbench's shadow-only ceiling.

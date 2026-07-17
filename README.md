@@ -309,18 +309,18 @@ codex plugin marketplace add /absolute/path/to/semwitness
 codex plugin add semwitness@semwitness-local --json
 ```
 
-The released `v0.5.0-alpha.1` ref predates the Promotion Evidence Workbench and
-must not be used for this command. Until a later tag is explicitly published,
-use the local checkout above or use mutable `main` only for development:
+The reviewed `v0.5.0-alpha.5` ref includes the Promotion Evidence Workbench,
+Cache Admission Passport, and per-hit Cache Admission Decision workflow. For a
+reproducible plugin install, pin that tag:
 
 ```bash
-codex plugin marketplace add aantenore/semwitness --ref main
+codex plugin marketplace add aantenore/semwitness --ref v0.5.0-alpha.5
 codex plugin add semwitness@semwitness-local --json
 ```
 
-`--ref main` follows a mutable branch and is not a reproducible production
-install. Use the next reviewed versioned tag once it exists; this change does
-not publish or imply a release.
+Use `--ref main` only for mutable development snapshots. The alpha tag is an
+immutable protocol boundary, not permission to serve cache values: Passport
+and Decision Statement remain unsigned, shadow-only evidence.
 
 Then explicitly ask Codex to use the skill, for example:
 
