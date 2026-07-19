@@ -1,20 +1,51 @@
 # SemWitness
 
-**Outcome:** SemWitness evaluates candidate context transformations, proves their
-mechanical safety properties, and reports net token effects. Shadow/identity is
-the default. Compact Response lets a model emit a small schema-bound JSON
-representation that a trusted local renderer expands only after strict
-validation, producing a content-free deterministic witness. The v0.7 alpha
-connects that boundary to AI SDK structured generation and records normalized
-provider usage without inferring savings from an unpaired run.
-This is separate from the v0.5 opt-in, promotion-gated host boundary for input
-tool results; the CLI and Codex plugin remain local and explicit.
-The repository also contains IntentWitness, a bounded, typed
-intent-normalization and cache-admission lab. Its Cache Admission Passport
-exports qualification lineage, while its Cache Admission Decision Statement
-binds that exact Passport to one exact eligible shadow hit. Both are unsigned
-in-toto Statements under repository-controlled predicates, and neither grants
-serving authority. IntentWitness never serves cached values.
+## What this changes in the real world
+
+AI applications can spend money and time sending the same bulky context again and again. Simply
+shortening it is risky: one missing instruction, number, or code character can change the result.
+**SemWitness lets a team test a proposed token-saving transformation, check objective safety rules,
+and keep evidence of exactly what was checked before that transformation is ever trusted.**
+
+### A concrete example
+
+A tool returns a large JSON result containing repeated formatting. SemWitness can try a smaller
+representation in shadow mode, preserve the original, reconstruct the value, verify protected
+parts and token accounting, and produce a reproducible receipt. If any check is incomplete or the
+framing costs more tokens than it saves, the application keeps the original unchanged.
+
+SemWitness is for AI platform teams that want to reduce context or output size without treating
+"looks similar" as proof. It also includes a bounded research lab for testing whether explicitly
+known equivalent requests could share an intent-cache key; it never serves a cached answer.
+
+| Feature                                          | Practical benefit                                                                                             |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| Shadow-first transformation tests                | Teams can measure a candidate on real workloads without changing what the model receives.                     |
+| Reversible decoding and protected-segment checks | Code, instructions, schemas, and other guarded content can fail closed instead of being silently damaged.     |
+| Net token accounting                             | A change is rejected when codec, legend, or rendering overhead cancels the apparent saving.                   |
+| Compact Response contracts                       | A model may return small typed data that a trusted local renderer expands deterministically after validation. |
+| Content-free witness bundles                     | Reviewers can reproduce mechanical checks without putting private prompts or outputs in telemetry.            |
+| IntentWitness qualification evidence             | Known alternate phrasings can be evaluated for safer cache reuse before any active cache exists.              |
+
+> **Maturity:** SemWitness is experimental alpha software. It does not prove that two natural-
+> language texts mean the same thing, automatically enable compression, or authorize a cache hit.
+> Its CLI and Codex plugin stay local and explicit; promotion and serving decisions remain with the
+> host application.
+
+## Technical scope
+
+SemWitness evaluates candidate context transformations, proves their mechanical safety properties,
+and reports net token effects. Shadow/identity is the default. Compact Response lets a model emit a
+small schema-bound JSON representation that a trusted local renderer expands only after strict
+validation, producing a content-free deterministic witness. The v0.7 alpha connects that boundary
+to AI SDK structured generation and records normalized provider usage without inferring savings
+from an unpaired run.
+
+This is separate from the v0.5 opt-in, promotion-gated host boundary for input tool results. The
+repository also contains IntentWitness, a bounded, typed intent-normalization and cache-admission
+lab. Its Cache Admission Passport exports qualification lineage, while its Cache Admission Decision
+Statement binds that exact Passport to one exact eligible shadow hit. Both are unsigned in-toto
+Statements under repository-controlled predicates, and neither grants serving authority.
 
 > Proof-carrying does not mean “the meaning is mathematically proved.” A SemWitness bundle proves checkable facts such as hashes, byte-exact protected segments, reversible decoding, typed-JSON equivalence, policy/codec identity, anchors, and token accounting. Natural-language semantic equivalence is not claimed.
 
