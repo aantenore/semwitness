@@ -26,6 +26,7 @@ known equivalent requests could share an intent-cache key; it never serves a cac
 | Compact Response contracts                       | A model may return small typed data that a trusted local renderer expands deterministically after validation. |
 | Content-free witness bundles                     | Reviewers can reproduce mechanical checks without putting private prompts or outputs in telemetry.            |
 | IntentWitness qualification evidence             | Known alternate phrasings can be evaluated for safer cache reuse before any active cache exists.              |
+| Resumable normalizer evaluations                 | Bounded model trials resume from committed opaque records and fail-stop when a claimed outcome is unknown.    |
 
 > **Maturity:** SemWitness is experimental alpha software. It does not prove that two natural-
 > language texts mean the same thing, automatically enable compression, or authorize a cache hit.
@@ -600,6 +601,13 @@ plus 48 equivalent and 96 distinct curated comparisons. Those comparisons are
 balanced coverage, not IID trials, so their automatic statistical bound is
 `null` and statistical readiness remains false. Every report sets
 `activeCacheQualified: false`.
+
+Library hosts can run the same evaluator through
+`runIntentNormalizerEvaluation(...)` with a private checkpoint store and an
+opaque digest that binds the exact deployment. The report remains byte-identical
+to an uninterrupted run. Each attempt is claimed before the provider call and
+committed as a content-free immutable record afterward. A claim with no committed
+record is reported as `indeterminate` and is never retried automatically.
 
 Remote shadow evaluation requires both an allowlisted, strict binding and
 explicit network opt-in:

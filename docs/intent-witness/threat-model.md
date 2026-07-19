@@ -58,6 +58,10 @@ gate.
 9. **CLI to remote compiler:** a strict allowlisted binding, explicit network
    opt-in, selected-case request budget, and `SEMWITNESS_*` credential reference
    mediate the otherwise offline evaluation path.
+10. **Host to evaluation checkpoint store:** the host supplies private durable
+    storage with linearizable claim creation and append-only checkpoint commits.
+    SemWitness validates returned records but cannot make a dishonest store
+    durable or authenticate unsigned data.
 
 ### Assumptions
 
@@ -113,6 +117,10 @@ gate.
     operation catalog or combined prompt before credentials or network. The CLI
     refuses a missing/mismatched network opt-in or a selected cases × runs count
     above budget before constructing the compiler.
+15. A checkpointed evaluator attempt is claimed before its compiler call and
+    durably committed before the runner advances. A claim without a checkpoint
+    is indeterminate and permanently fail-stops that run instead of being
+    retried implicitly.
 
 ## Threats and required controls
 

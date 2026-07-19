@@ -171,6 +171,49 @@ Every report sets `activeCacheQualified: false`. The existing IntentWitness
 promotion sequence and independent application-level shadow comparison remain
 mandatory.
 
+## Resumable host evaluation
+
+`runIntentNormalizerEvaluation(...)` is the resumable form of the existing
+library evaluator. `evaluateIntentNormalizer(...)` remains its unbounded
+compatibility wrapper and produces the same report bytes as before.
+
+A host supplies a private `IntentEvaluationCheckpointStore`, a
+`checkpointBindingDigest`, and optionally `maxNewObservations`. The host digest
+must bind everything outside the fixture that should invalidate a run, such as
+the compiler deployment, configuration revision, credential identity, and
+application release. SemWitness combines it with the corpus, split, attempt
+count, and evaluation policy to derive opaque attempt references.
+
+The store contract has two phases:
+
+1. `inspect(claim)` returns a completed checkpoint, a missing slot, or an
+   indeterminate prior claim;
+2. `begin(claim)` atomically acquires a missing slot, observes a concurrent
+   completion, or reports an existing indeterminate claim.
+
+After acquisition, SemWitness calls the compiler once and awaits `commit(...)`
+before advancing. Completed records contain only digests, reason codes, an
+opaque case reference, and the attempt ordinal. They contain no source, case or
+family ID, registry label, operation name, prompt, or model output. Returned
+records are strictly validated for exact fields, run/slot binding, outcome
+shape, reason codes, and self-digest before they contribute to a report.
+
+The atomic claim closes the ordinary concurrent-worker race. If a process stops
+after the provider responds but before its checkpoint commits, the durable claim
+has an unknown outcome. The runner returns `indeterminate` and deliberately does
+not repeat the call. This version exposes no in-place recovery operation and
+does not propagate the attempt reference as a provider idempotency key, so that
+run remains fail-stopped even when the provider has an idempotency feature. A
+new host-authorized run uses a new binding and repeats the campaign rather than
+silently guessing the missing outcome. Checkpoint digests detect accidental
+mutation; they are not signatures, cache authority, or proof that the storage
+host is honest.
+
+`maxNewObservations: 0` is valid: it verifies and replays already committed
+records without making a new compiler call. An incomplete result never contains
+a partial evaluation report; only SemWitness finalizes the report after every
+required attempt is present.
+
 ## CLI
 
 Run the checked-in conformance example:
