@@ -1,16 +1,25 @@
 import { toJsonValue } from '../domain/canonical-json.js';
 import { compareCodeUnits } from '../domain/deterministic-order.js';
-import { hashCanonical, sha256 } from '../domain/hash.js';
+import { hashCanonical, isSha256Digest, sha256 } from '../domain/hash.js';
 import { zeroFailureGateUpperBound95Ppm } from '../eval/binomial.js';
 import { digestIntent, digestIntentSource } from './canonical.js';
 import { normalizeIntentShadow } from './compiler.js';
+import {
+  createIntentEvaluationCheckpoint,
+  createIntentEvaluationCheckpointClaim,
+  intentEvaluationCheckpointReference,
+  parseIntentEvaluationCheckpoint,
+} from './evaluation-checkpoint.js';
 import { assertParsedIntentEvaluationFixture } from './normalizer-schemas.js';
 import {
   INTENT_EVALUATION_REPORT_SCHEMA,
   type EvaluateIntentNormalizerInput,
   type IntentEvaluationCase,
   type IntentEvaluationCaseResult,
+  type IntentEvaluationProgress,
   type IntentEvaluationReport,
+  type RunIntentNormalizerEvaluationInput,
+  type RunIntentNormalizerEvaluationResult,
 } from './normalizer-types.js';
 import type { IntentReasonCode } from './types.js';
 
@@ -41,10 +50,45 @@ interface AttemptObservation {
 export async function evaluateIntentNormalizer(
   input: EvaluateIntentNormalizerInput,
 ): Promise<IntentEvaluationReport> {
+  const result = await runIntentNormalizerEvaluation(input);
+  if (result.status !== 'complete') {
+    throw new TypeError('Unbounded intent evaluation did not complete');
+  }
+  return result.report;
+}
+
+/**
+ * Evaluate a fixture in deterministic case/attempt order. When a checkpoint
+ * store is supplied, every provider call is preceded by an atomic claim and
+ * followed by an immutable content-free checkpoint. A claim without a
+ * checkpoint is deliberately indeterminate and is never retried implicitly.
+ */
+export async function runIntentNormalizerEvaluation(
+  input: RunIntentNormalizerEvaluationInput,
+): Promise<RunIntentNormalizerEvaluationResult> {
   const attempts = input.attempts ?? 2;
   const split = input.split ?? 'all';
   if (!Number.isSafeInteger(attempts) || attempts < 2 || attempts > 20) {
     throw new TypeError('Intent evaluation attempts must be between 2 and 20');
+  }
+  if (
+    input.maxNewObservations !== undefined &&
+    (!Number.isSafeInteger(input.maxNewObservations) ||
+      input.maxNewObservations < 0)
+  ) {
+    throw new TypeError(
+      'Intent evaluation maxNewObservations must be a non-negative integer',
+    );
+  }
+  if (input.maxNewObservations !== undefined && !input.checkpointStore) {
+    throw new TypeError(
+      'Intent evaluation maxNewObservations requires a checkpoint store',
+    );
+  }
+  if (input.checkpointStore && !isSha256Digest(input.checkpointBindingDigest)) {
+    throw new TypeError(
+      'Intent evaluation checkpointBindingDigest must be a SHA-256 digest',
+    );
   }
   assertParsedIntentEvaluationFixture(input.fixture);
 
@@ -65,8 +109,175 @@ export async function evaluateIntentNormalizer(
       selectedIds.has(item.rightCaseId),
   );
 
+  const checkpointBindingDigest =
+    input.checkpointBindingDigest ??
+    sha256('semwitness.dev/intent-eval/unbound-checkpoint-run/v1');
+  const evaluationBindingDigest = hashCanonical(
+    toJsonValue({
+      schema: 'semwitness.dev/intent-eval-run-binding/v1',
+      evaluationPolicyDigest: EVALUATION_POLICY_DIGEST,
+      checkpointBindingDigest,
+      corpusDigest: input.fixture.corpusDigest,
+      split,
+      attemptsPerCase: attempts,
+      totalObservations: selectedCases.length * attempts,
+    }),
+  );
+  const totalObservations = selectedCases.length * attempts;
+  let resumedObservations = 0;
+  let observedThisRun = 0;
+
+  const observations = new Map<string, AttemptObservation[]>();
+
+  for (const fixture of selectedCases) {
+    const trial: AttemptObservation[] = [];
+    for (let index = 0; index < attempts; index += 1) {
+      const caseRef = caseReference(
+        input.fixture.corpusDigest,
+        canonicalOrdinals.get(fixture)!,
+      );
+      let observation: AttemptObservation;
+      if (!input.checkpointStore) {
+        observation = await observe(input, fixture);
+        observedThisRun += 1;
+      } else {
+        const checkpointRef = intentEvaluationCheckpointReference(
+          evaluationBindingDigest,
+          caseRef,
+          index,
+        );
+        const claim = createIntentEvaluationCheckpointClaim(
+          checkpointRef,
+          evaluationBindingDigest,
+          caseRef,
+          index,
+        );
+        const inspected = await input.checkpointStore.inspect(claim);
+        if (inspected.status === 'completed') {
+          observation = parseIntentEvaluationCheckpoint(inspected.checkpoint, {
+            checkpointRef,
+            evaluationBindingDigest,
+            caseRef,
+            attemptOrdinal: index,
+          }).observation;
+          resumedObservations += 1;
+        } else if (inspected.status === 'indeterminate') {
+          return {
+            status: 'indeterminate',
+            progress: evaluationProgress(
+              evaluationBindingDigest,
+              totalObservations,
+              resumedObservations,
+              observedThisRun,
+              trial.length + completedObservationCount(observations),
+            ),
+            checkpointRef,
+          };
+        } else if (inspected.status === 'missing') {
+          if (
+            observedThisRun >=
+            (input.maxNewObservations ?? Number.POSITIVE_INFINITY)
+          ) {
+            return {
+              status: 'incomplete',
+              progress: evaluationProgress(
+                evaluationBindingDigest,
+                totalObservations,
+                resumedObservations,
+                observedThisRun,
+                trial.length + completedObservationCount(observations),
+              ),
+            };
+          }
+          const acquired = await input.checkpointStore.begin(claim);
+          if (acquired.status === 'completed') {
+            observation = parseIntentEvaluationCheckpoint(acquired.checkpoint, {
+              checkpointRef,
+              evaluationBindingDigest,
+              caseRef,
+              attemptOrdinal: index,
+            }).observation;
+            resumedObservations += 1;
+          } else if (acquired.status === 'indeterminate') {
+            return {
+              status: 'indeterminate',
+              progress: evaluationProgress(
+                evaluationBindingDigest,
+                totalObservations,
+                resumedObservations,
+                observedThisRun,
+                trial.length + completedObservationCount(observations),
+              ),
+              checkpointRef,
+            };
+          } else if (acquired.status === 'acquired') {
+            if (typeof acquired.commit !== 'function') {
+              throw new TypeError(
+                'Intent evaluation checkpoint acquisition is malformed',
+              );
+            }
+            observation = await observe(input, fixture);
+            const checkpoint = createIntentEvaluationCheckpoint(
+              checkpointRef,
+              evaluationBindingDigest,
+              caseRef,
+              index,
+              observation,
+            );
+            await acquired.commit(checkpoint);
+            observedThisRun += 1;
+          } else {
+            throw new TypeError(
+              'Intent evaluation checkpoint acquisition is malformed',
+            );
+          }
+        } else {
+          throw new TypeError(
+            'Intent evaluation checkpoint inspection is malformed',
+          );
+        }
+      }
+      trial.push(observation);
+    }
+    observations.set(fixture.id, trial);
+  }
+
+  const report = buildReport(
+    input,
+    split,
+    attempts,
+    selectedCases,
+    selectedComparisons,
+    canonicalOrdinals,
+    observations,
+  );
+  return {
+    status: 'complete',
+    progress: evaluationProgress(
+      evaluationBindingDigest,
+      totalObservations,
+      resumedObservations,
+      observedThisRun,
+      totalObservations,
+    ),
+    report,
+  };
+}
+
+function buildReport(
+  input: EvaluateIntentNormalizerInput,
+  split: IntentEvaluationReport['split'],
+  attempts: number,
+  selectedCases: readonly IntentEvaluationCase[],
+  selectedComparisons: readonly {
+    readonly leftCaseId: string;
+    readonly rightCaseId: string;
+    readonly relation: 'equivalent' | 'distinct';
+  }[],
+  canonicalOrdinals: ReadonlyMap<IntentEvaluationCase, number>,
+  observations: ReadonlyMap<string, readonly AttemptObservation[]>,
+): IntentEvaluationReport {
   const caseResults: IntentEvaluationCaseResult[] = [];
-  const observations = new Map<string, readonly AttemptObservation[]>();
   const contractDigests = new Set<string>();
   const normalizerBindingDigests = new Set<ReturnType<typeof sha256>>();
   const ontologyBindingDigests = new Set<ReturnType<typeof sha256>>();
@@ -74,15 +285,12 @@ export async function evaluateIntentNormalizer(
   let unsafeAccepts = 0;
 
   for (const fixture of selectedCases) {
-    const trial: AttemptObservation[] = [];
-    for (let index = 0; index < attempts; index += 1) {
-      const observation = await observe(input, fixture);
-      trial.push(observation);
+    const trial = observations.get(fixture.id)!;
+    for (const observation of trial) {
       contractDigests.add(observation.contractDigest);
       normalizerBindingDigests.add(observation.normalizerBindingDigest);
       ontologyBindingDigests.add(observation.ontologyBindingDigest);
     }
-    observations.set(fixture.id, trial);
 
     const first = trial[0]!;
     const repeatable = trial.every(
@@ -251,6 +459,31 @@ export async function evaluateIntentNormalizer(
     },
     cases: caseResults,
   };
+}
+
+function evaluationProgress(
+  evaluationBindingDigest: ReturnType<typeof sha256>,
+  totalObservations: number,
+  resumedObservations: number,
+  observedThisRun: number,
+  completedObservations: number,
+): IntentEvaluationProgress {
+  return {
+    evaluationBindingDigest,
+    totalObservations,
+    completedObservations,
+    resumedObservations,
+    observedThisRun,
+    remainingObservations: totalObservations - completedObservations,
+  };
+}
+
+function completedObservationCount(
+  observations: ReadonlyMap<string, readonly AttemptObservation[]>,
+): number {
+  let completed = 0;
+  for (const trial of observations.values()) completed += trial.length;
+  return completed;
 }
 
 /**

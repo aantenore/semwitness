@@ -1,6 +1,10 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
 import { describe, expect, it, vi } from 'vitest';
 
-import { sha256 } from '../src/domain/hash.js';
+import { toJsonValue } from '../src/domain/canonical-json.js';
+import { hashCanonical, sha256 } from '../src/domain/hash.js';
 import {
   INTENT_EVALUATION_FIXTURE_SCHEMA,
   INTENT_OPERATION_REGISTRY_SCHEMA,
@@ -13,8 +17,11 @@ import {
   hmacIntentSourceDigest,
   normalizeIntentShadow,
   parseIntentEvaluationJsonl,
+  runIntentNormalizerEvaluation,
   type IntentCompilerResult,
   type IntentEvaluationCase,
+  type IntentEvaluationCheckpoint,
+  type IntentEvaluationCheckpointStore,
   type IntentIR,
   type IntentOperationRegistryDocument,
   type IntentProposalCompiler,
@@ -26,6 +33,7 @@ const ontology = {
   digest: sha256('knowledge-intents-v1'),
 } as const;
 const policyDigest = sha256('normalizer-policy-v1');
+const execFileAsync = promisify(execFile);
 
 function intent(action: string, effect: IntentIR['effect'] = 'read'): IntentIR {
   return {
@@ -135,6 +143,59 @@ function comparisonRecord(input: {
 
 function jsonl(records: readonly unknown[]): string {
   return records.map((record) => JSON.stringify(record)).join('\n');
+}
+
+function memoryCheckpointStore(input?: {
+  readonly failCommit?: boolean;
+  readonly failAfterCommit?: boolean;
+}) {
+  const records = new Map<string, unknown>();
+  const claims = new Set<string>();
+  const store: IntentEvaluationCheckpointStore = {
+    inspect(claim) {
+      const { checkpointRef } = claim;
+      if (records.has(checkpointRef)) {
+        return { status: 'completed', checkpoint: records.get(checkpointRef) };
+      }
+      return claims.has(checkpointRef)
+        ? { status: 'indeterminate' }
+        : { status: 'missing' };
+    },
+    begin(claim) {
+      if (records.has(claim.checkpointRef)) {
+        return {
+          status: 'completed',
+          checkpoint: records.get(claim.checkpointRef),
+        };
+      }
+      if (claims.has(claim.checkpointRef)) {
+        return { status: 'indeterminate' };
+      }
+      claims.add(claim.checkpointRef);
+      return {
+        status: 'acquired',
+        commit(checkpoint: IntentEvaluationCheckpoint) {
+          if (input?.failCommit) throw new Error('simulated persistence loss');
+          if (records.has(claim.checkpointRef)) {
+            throw new Error('checkpoint already exists');
+          }
+          records.set(claim.checkpointRef, checkpoint);
+          if (input?.failAfterCommit) {
+            throw new Error('simulated lost commit acknowledgement');
+          }
+        },
+      };
+    },
+  };
+  return { store, records, claims };
+}
+
+function resignCheckpoint(value: unknown): unknown {
+  const { recordDigest: _recordDigest, ...payload } = value as Record<
+    string,
+    unknown
+  >;
+  return { ...payload, recordDigest: hashCanonical(toJsonValue(payload)) };
 }
 
 describe('declarative intent normalization', () => {
@@ -1006,6 +1067,462 @@ describe('intent normalizer evaluation', () => {
         attempts: 1,
       }),
     ).rejects.toThrow(/between 2 and 20/u);
+  });
+
+  it('resumes content-free checkpoints without duplicate compiler calls', async () => {
+    const normalizer = createNormalizer();
+    let calls = 0;
+    const compiler: IntentProposalCompiler = {
+      manifest: normalizer.manifest,
+      compile(request) {
+        calls += 1;
+        return normalizer.compile(request);
+      },
+    };
+    const fixture = representativeFixture();
+    const uninterrupted = await evaluateIntentNormalizer({
+      compiler: normalizer,
+      registry: normalizer,
+      fixture,
+      attempts: 2,
+    });
+    const checkpoints = memoryCheckpointStore();
+    const common = {
+      compiler,
+      registry: normalizer,
+      fixture,
+      attempts: 2,
+      checkpointStore: checkpoints.store,
+      checkpointBindingDigest: sha256('host-bound-run-v1'),
+    } as const;
+
+    const empty = await runIntentNormalizerEvaluation({
+      ...common,
+      maxNewObservations: 0,
+    });
+    expect(empty).toMatchObject({
+      status: 'incomplete',
+      progress: {
+        totalObservations: 8,
+        completedObservations: 0,
+        observedThisRun: 0,
+      },
+    });
+    expect(calls).toBe(0);
+
+    const first = await runIntentNormalizerEvaluation({
+      ...common,
+      maxNewObservations: 3,
+    });
+    expect(first).toMatchObject({
+      status: 'incomplete',
+      progress: {
+        completedObservations: 3,
+        resumedObservations: 0,
+        observedThisRun: 3,
+        remainingObservations: 5,
+      },
+    });
+    expect('report' in first).toBe(false);
+    expect(
+      first.progress.resumedObservations + first.progress.observedThisRun,
+    ).toBe(first.progress.completedObservations);
+    expect(calls).toBe(3);
+
+    const second = await runIntentNormalizerEvaluation({
+      ...common,
+      maxNewObservations: 2,
+    });
+    expect(second).toMatchObject({
+      status: 'incomplete',
+      progress: {
+        completedObservations: 5,
+        resumedObservations: 3,
+        observedThisRun: 2,
+      },
+    });
+    expect('report' in second).toBe(false);
+    expect(
+      second.progress.resumedObservations + second.progress.observedThisRun,
+    ).toBe(second.progress.completedObservations);
+    expect(calls).toBe(5);
+
+    const completed = await runIntentNormalizerEvaluation({
+      ...common,
+      maxNewObservations: 3,
+    });
+    expect(completed.status).toBe('complete');
+    if (completed.status !== 'complete') return;
+    expect(completed.progress).toMatchObject({
+      completedObservations: 8,
+      resumedObservations: 5,
+      observedThisRun: 3,
+      remainingObservations: 0,
+    });
+    expect(completed.report).toEqual(uninterrupted);
+    expect(JSON.stringify(completed.report)).toBe(
+      JSON.stringify(uninterrupted),
+    );
+    expect(calls).toBe(8);
+
+    const replay = await runIntentNormalizerEvaluation({
+      ...common,
+      maxNewObservations: 0,
+    });
+    expect(replay.status).toBe('complete');
+    expect(replay.progress).toMatchObject({
+      completedObservations: 8,
+      resumedObservations: 8,
+      observedThisRun: 0,
+    });
+    expect(calls).toBe(8);
+
+    const persisted = JSON.stringify([...checkpoints.records.values()]);
+    for (const rawValue of [
+      'Spiegami',
+      'Disabilita',
+      'redis-a',
+      'redis-explain',
+      'knowledge-intents',
+      'redis-configuration',
+    ]) {
+      expect(persisted).not.toContain(rawValue);
+    }
+  });
+
+  it('rejects malformed checkpoint records before another compiler call', async () => {
+    const normalizer = createNormalizer();
+    let calls = 0;
+    const compiler: IntentProposalCompiler = {
+      manifest: normalizer.manifest,
+      compile(request) {
+        calls += 1;
+        return normalizer.compile(request);
+      },
+    };
+    const checkpoints = memoryCheckpointStore();
+    const input = {
+      compiler,
+      registry: normalizer,
+      fixture: representativeFixture(),
+      attempts: 2,
+      checkpointStore: checkpoints.store,
+      checkpointBindingDigest: sha256('tamper-test-run'),
+    } as const;
+    await runIntentNormalizerEvaluation({ ...input, maxNewObservations: 1 });
+    expect(calls).toBe(1);
+    const [checkpointRef, original] = [...checkpoints.records.entries()][0]!;
+    checkpoints.records.set(checkpointRef, {
+      ...(original as object),
+      leakedCaseId: 'raw-case-id',
+    });
+
+    await expect(runIntentNormalizerEvaluation(input)).rejects.toThrow(
+      /unknown fields/u,
+    );
+    expect(calls).toBe(1);
+
+    checkpoints.records.set(checkpointRef, original);
+    expect(Object.isFrozen(original)).toBe(true);
+    expect(
+      Object.isFrozen((original as IntentEvaluationCheckpoint).observation),
+    ).toBe(true);
+    expect(
+      Object.isFrozen(
+        (original as IntentEvaluationCheckpoint).observation.reasons,
+      ),
+    ).toBe(true);
+
+    const base = structuredClone(original) as IntentEvaluationCheckpoint;
+    const impossible = [
+      resignCheckpoint({
+        ...base,
+        observation: {
+          ...base.observation,
+          actual: 'intent',
+          intentDigest: sha256('fabricated-intent'),
+          reasons: ['INTENT_NO_MATCH'],
+          executionFailure: false,
+        },
+      }),
+      resignCheckpoint({
+        ...base,
+        observation: {
+          ...base.observation,
+          actual: 'bypass',
+          reasons: ['CACHE_HIT_ELIGIBLE'],
+          executionFailure: false,
+        },
+      }),
+      resignCheckpoint({
+        ...base,
+        observation: {
+          ...base.observation,
+          reasons: [
+            'INTENT_NORMALIZATION_ELIGIBLE',
+            'INTENT_NORMALIZATION_ELIGIBLE',
+          ],
+        },
+      }),
+      resignCheckpoint({
+        ...base,
+        observation: { ...base.observation, unexpected: true },
+      }),
+      { ...base, recordDigest: sha256('wrong-record-digest') },
+    ];
+    for (const malformed of impossible) {
+      checkpoints.records.set(checkpointRef, malformed);
+      await expect(runIntentNormalizerEvaluation(input)).rejects.toThrow(
+        /Intent evaluation checkpoint/u,
+      );
+      expect(calls).toBe(1);
+    }
+  });
+
+  it('passes frozen opaque claims and records across the store boundary', async () => {
+    const normalizer = createNormalizer();
+    const stored = memoryCheckpointStore();
+    let inspections = 0;
+    const store: IntentEvaluationCheckpointStore = {
+      inspect(claim) {
+        inspections += 1;
+        expect(Object.isFrozen(claim)).toBe(true);
+        expect(
+          Reflect.set(claim as object, 'checkpointRef', sha256('mutated')),
+        ).toBe(false);
+        const { claimDigest, ...payload } = claim;
+        expect(claimDigest).toBe(hashCanonical(toJsonValue(payload)));
+        expect(JSON.stringify(claim)).not.toContain('redis');
+        return stored.store.inspect(claim);
+      },
+      begin(claim) {
+        expect(Object.isFrozen(claim)).toBe(true);
+        const result = stored.store.begin(claim);
+        if (result instanceof Promise || result.status !== 'acquired') {
+          return result;
+        }
+        return {
+          status: 'acquired',
+          commit(checkpoint: IntentEvaluationCheckpoint) {
+            expect(Object.isFrozen(checkpoint)).toBe(true);
+            expect(Object.isFrozen(checkpoint.observation)).toBe(true);
+            expect(Object.isFrozen(checkpoint.observation.reasons)).toBe(true);
+            return result.commit(checkpoint);
+          },
+        };
+      },
+    };
+
+    const result = await runIntentNormalizerEvaluation({
+      compiler: normalizer,
+      registry: normalizer,
+      fixture: representativeFixture(),
+      attempts: 2,
+      checkpointStore: store,
+      checkpointBindingDigest: sha256('frozen-port-run'),
+      maxNewObservations: 1,
+    });
+    expect(result.status).toBe('incomplete');
+    expect(inspections).toBe(2);
+  });
+
+  it('never retries an attempt whose claim has an unknown outcome', async () => {
+    const normalizer = createNormalizer();
+    let calls = 0;
+    const compiler: IntentProposalCompiler = {
+      manifest: normalizer.manifest,
+      compile(request) {
+        calls += 1;
+        return normalizer.compile(request);
+      },
+    };
+    const checkpoints = memoryCheckpointStore({ failCommit: true });
+    const input = {
+      compiler,
+      registry: normalizer,
+      fixture: representativeFixture(),
+      attempts: 2,
+      checkpointStore: checkpoints.store,
+      checkpointBindingDigest: sha256('indeterminate-run'),
+      maxNewObservations: 1,
+    } as const;
+
+    await expect(runIntentNormalizerEvaluation(input)).rejects.toThrow(
+      /simulated persistence loss/u,
+    );
+    expect(calls).toBe(1);
+    const resumed = await runIntentNormalizerEvaluation(input);
+    expect(resumed).toMatchObject({
+      status: 'indeterminate',
+      progress: { completedObservations: 0, observedThisRun: 0 },
+    });
+    expect('report' in resumed).toBe(false);
+    expect(calls).toBe(1);
+  });
+
+  it('resumes a durable checkpoint when commit acknowledgement is lost', async () => {
+    const normalizer = createNormalizer();
+    let calls = 0;
+    const compiler: IntentProposalCompiler = {
+      manifest: normalizer.manifest,
+      compile(request) {
+        calls += 1;
+        return normalizer.compile(request);
+      },
+    };
+    const checkpoints = memoryCheckpointStore({ failAfterCommit: true });
+    const base = {
+      compiler,
+      registry: normalizer,
+      fixture: representativeFixture(),
+      attempts: 2,
+      checkpointStore: checkpoints.store,
+      checkpointBindingDigest: sha256('lost-acknowledgement-run'),
+    } as const;
+
+    await expect(
+      runIntentNormalizerEvaluation({ ...base, maxNewObservations: 1 }),
+    ).rejects.toThrow(/lost commit acknowledgement/u);
+    expect(calls).toBe(1);
+    const resumed = await runIntentNormalizerEvaluation({
+      ...base,
+      maxNewObservations: 0,
+    });
+    expect(resumed).toMatchObject({
+      status: 'incomplete',
+      progress: {
+        completedObservations: 1,
+        resumedObservations: 1,
+        observedThisRun: 0,
+      },
+    });
+    expect(calls).toBe(1);
+  });
+
+  it('allows only one concurrent worker to acquire an attempt', async () => {
+    const normalizer = createNormalizer();
+    let calls = 0;
+    let release!: () => void;
+    const providerGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const compiler: IntentProposalCompiler = {
+      manifest: normalizer.manifest,
+      async compile(request) {
+        calls += 1;
+        await providerGate;
+        return normalizer.compile(request);
+      },
+    };
+    const checkpoints = memoryCheckpointStore();
+    let inspected = 0;
+    let releaseInspection!: () => void;
+    const inspectionBarrier = new Promise<void>((resolve) => {
+      releaseInspection = resolve;
+    });
+    const concurrentStore: IntentEvaluationCheckpointStore = {
+      async inspect(claim) {
+        inspected += 1;
+        if (inspected <= 2) {
+          if (inspected === 2) releaseInspection();
+          await inspectionBarrier;
+          return { status: 'missing' };
+        }
+        return checkpoints.store.inspect(claim);
+      },
+      begin: (claim) => checkpoints.store.begin(claim),
+    };
+    const input = {
+      compiler,
+      registry: normalizer,
+      fixture: representativeFixture(),
+      attempts: 2,
+      checkpointStore: concurrentStore,
+      checkpointBindingDigest: sha256('concurrent-run'),
+      maxNewObservations: 1,
+    } as const;
+
+    const owner = runIntentNormalizerEvaluation(input);
+    const peerRun = runIntentNormalizerEvaluation(input);
+    await vi.waitFor(() => expect(calls).toBe(1));
+    const peer = await peerRun;
+    expect(peer.status).toBe('indeterminate');
+    expect(calls).toBe(1);
+
+    release();
+    await expect(owner).resolves.toMatchObject({
+      status: 'incomplete',
+      progress: { completedObservations: 1, observedThisRun: 1 },
+    });
+    expect(calls).toBe(1);
+  });
+
+  it('requires a host binding and persistent store for bounded runs', async () => {
+    const normalizer = createNormalizer();
+    const fixture = representativeFixture();
+    await expect(
+      runIntentNormalizerEvaluation({
+        compiler: normalizer,
+        registry: normalizer,
+        fixture,
+        maxNewObservations: 0,
+      }),
+    ).rejects.toThrow(/requires a checkpoint store/u);
+    await expect(
+      runIntentNormalizerEvaluation({
+        compiler: normalizer,
+        registry: normalizer,
+        fixture,
+        checkpointStore: memoryCheckpointStore().store,
+      }),
+    ).rejects.toThrow(/checkpointBindingDigest/u);
+
+    for (const invalid of [
+      -1,
+      0.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.MAX_SAFE_INTEGER + 1,
+    ]) {
+      await expect(
+        runIntentNormalizerEvaluation({
+          compiler: normalizer,
+          registry: normalizer,
+          fixture,
+          checkpointStore: memoryCheckpointStore().store,
+          checkpointBindingDigest: sha256('invalid-budget-run'),
+          maxNewObservations: invalid,
+        }),
+      ).rejects.toThrow(/non-negative integer/u);
+    }
+  });
+
+  it('preserves the exact pre-refactor CLI report bytes', async () => {
+    const { stdout, stderr } = await execFileAsync(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        'src/entrypoints/cli.ts',
+        'intent',
+        'evaluate',
+        '--normalizer',
+        'examples/intent-normalizer.json',
+        '--fixture',
+        'examples/intent-normalizer-eval.jsonl',
+        '--split',
+        'conformance',
+        '--runs',
+        '2',
+        '--json',
+      ],
+      { cwd: process.cwd(), encoding: 'utf8', maxBuffer: 1_000_000 },
+    );
+    expect(stderr).toBe('');
+    expect(Buffer.byteLength(stdout)).toBe(14_430);
+    expect(sha256(stdout)).toBe(
+      'sha256:efb604b8eeeffed45eeeee4257dd8cf1de25edd420db6a27bb1ed5c7321badf9',
+    );
   });
 
   it('computes predeclared zero-failure bounds without sample-size theater', () => {
