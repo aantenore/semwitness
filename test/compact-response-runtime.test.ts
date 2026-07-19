@@ -364,18 +364,18 @@ describe('compact response runtime', () => {
     const timeoutWire = JSON.parse(contractSource) as {
       limits: { maxRenderMs: number };
     };
-    timeoutWire.limits.maxRenderMs = 1;
+    timeoutWire.limits.maxRenderMs = 100;
     const tokenizerCount = vi.fn(exactTokenizer.count);
     const slowRenderer = vi.fn(() => {
       const startedAt = performance.now();
       let spins = 0;
-      while (performance.now() - startedAt < 8) spins += 1;
+      while (performance.now() - startedAt < 150) spins += 1;
       return `safe output ${spins}`;
     });
     const expiredAfterRender = await createCompactResponseRuntime({
       renderers: [{ ...base, render: slowRenderer }],
       tokenizer: { ...exactTokenizer, count: tokenizerCount },
-      preparationTimeoutMs: 1,
+      preparationTimeoutMs: 100,
     }).render({
       contract: parseCompactResponseContract(JSON.stringify(timeoutWire)),
       candidate,
