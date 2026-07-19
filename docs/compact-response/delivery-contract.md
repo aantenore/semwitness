@@ -93,11 +93,12 @@ input remains strict JSON bytes or text, never an arbitrary JavaScript object.
 
 ## Rollout gate
 
-The alpha proves deterministic local rendering and evidence binding only. A
-later SDK/App Server adapter requires at least 50 held-out counterbalanced
-cases, exact provider usage, retry/refusal/truncation accounting, zero task
-regressions, and at least 10% net output-token benefit before any production
-claim. Until then the feature is explicit and opt-in.
+The v0.6 alpha proves deterministic local rendering and evidence binding only.
+Any production promotion of a later SDK/App Server adapter requires at least
+50 held-out counterbalanced cases, exact provider usage,
+retry/refusal/truncation accounting, zero task regressions, and at least 10%
+net output-token benefit before any production claim. Until then the feature
+and every adapter remain explicit, experimental, and opt-in.
 
 ## Rollback
 

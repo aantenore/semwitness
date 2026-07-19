@@ -49,7 +49,7 @@ describe('package manifest', () => {
 
     expect(manifest).toMatchObject({
       name: 'semwitness',
-      version: '0.6.0-alpha.1',
+      version: '0.7.0-alpha.1',
     });
     expect(pluginManifest).toMatchObject({
       name: manifest.name,
@@ -59,9 +59,14 @@ describe('package manifest', () => {
       types: './dist/response/index.d.ts',
       import: './dist/response/index.js',
     });
+    expect(manifest.exports?.['./ai-sdk']).toEqual({
+      types: './dist/ai-sdk/index.d.ts',
+      import: './dist/ai-sdk/index.js',
+    });
     expect(manifest.files).toEqual(
       expect.arrayContaining([
         'dist',
+        'examples/compact-response/ai-sdk-output.mjs',
         'examples/compact-response/change-report.candidate.json',
         'examples/compact-response/change-report.contract.json',
       ]),

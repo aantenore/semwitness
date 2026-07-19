@@ -1,6 +1,6 @@
 {
   "name": "semwitness",
-  "version": "0.6.0-alpha.1",
+  "version": "0.7.0-alpha.1",
   "description": "Proof-carrying context optimization, compact response rendering, and shadow intent-cache admission.",
   "type": "module",
   "license": "Apache-2.0",
@@ -30,6 +30,7 @@
     "docs",
     "examples/compact-response/change-report.candidate.json",
     "examples/compact-response/change-report.contract.json",
+    "examples/compact-response/ai-sdk-output.mjs",
     "examples/intent-witness.mjs",
     "examples/intent-normalizer.json",
     "examples/intent-normalizer-eval.jsonl",
@@ -80,6 +81,7 @@
     "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test",
     "dev": "tsx src/entrypoints/cli.ts",
     "example:intent": "node examples/intent-witness.mjs",
+    "example:response-ai-sdk": "node examples/compact-response/ai-sdk-output.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "oxlint --deny-warnings src test scripts",

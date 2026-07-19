@@ -2,9 +2,11 @@
 
 **Outcome:** SemWitness evaluates candidate context transformations, proves their
 mechanical safety properties, and reports net token effects. Shadow/identity is
-the default. The v0.6 alpha also introduces Compact Response: a model emits a
-small schema-bound JSON representation and a trusted local renderer expands it
-only after strict validation, producing a content-free deterministic witness.
+the default. Compact Response lets a model emit a small schema-bound JSON
+representation that a trusted local renderer expands only after strict
+validation, producing a content-free deterministic witness. The v0.7 alpha
+connects that boundary to AI SDK structured generation and records normalized
+provider usage without inferring savings from an unpaired run.
 This is separate from the v0.5 opt-in, promotion-gated host boundary for input
 tool results; the CLI and Codex plugin remain local and explicit.
 The repository also contains IntentWitness, a bounded, typed
@@ -299,7 +301,7 @@ cancellation is required. See the
 [v0.5 delivery contract](docs/delivery-contract-v0.5.md) and [ADR
 0001](docs/adr/0001-embedded-verified-request-preparer.md).
 
-## Compact Response (v0.6 alpha)
+## Compact Response (v0.7 alpha)
 
 `semwitness/response` tackles output cost at the correct boundary. The model is
 asked to generate only a compact intermediate representation; a local renderer
@@ -360,8 +362,52 @@ import {
 } from 'semwitness/response';
 ```
 
+AI SDK 7 hosts can now request the compact shape before generation and receive
+only the verified local result through the structured `output` value:
+
+```ts
+import { generateText } from 'ai';
+import {
+  createCompactResponseOutput,
+  requireCompactResponseOutput,
+} from 'semwitness/ai-sdk';
+
+const result = await generateText({
+  model,
+  output: createCompactResponseOutput({
+    contract,
+    runtime,
+    name: 'agent_change_report',
+    description: 'Return the compact fields selected by the host.',
+  }),
+  prompt,
+});
+
+const { rendered, mediaType, witness, providerObservation } =
+  requireCompactResponseOutput({
+    read: () => result.output,
+    warnings: result.warnings,
+  });
+```
+
+This adapter is non-streaming-first and fail-closed. `generateText` skips custom
+output parsing when its finish reason is not `stop`, so the mandatory
+`requireCompactResponseOutput` boundary turns that absent value into the same
+typed retry signal. AI SDK can retain the provider JSON in `result.text`, so
+hosts must treat `result.content`, `finalStep`, `steps`, response messages,
+callbacks, telemetry, and every text/UI stream or pipe helper as raw surfaces
+too. Compact Response authority covers only the value returned by
+`requireCompactResponseOutput`. The provider must actually support the supplied
+structured schema; compatibility warnings fail closed. The observation receipt
+contains final-step usage, not provider identity or end-to-end accounting, and
+has no ordinary-response baseline. Billed savings therefore remain `null`
+until the documented paired evaluation gate passes.
+
+Run the credential-free packed example with `pnpm example:response-ai-sdk`.
+
 See the [delivery contract](docs/compact-response/delivery-contract.md),
 [architecture](docs/compact-response/architecture.md), and
+[AI SDK output boundary](docs/compact-response/ai-sdk-output.md), plus the
 [threat model](docs/compact-response/threat-model.md). IntentWitness can bind
 the contract digest through its existing `outputContractDigest`; normalization
 and rendering remain separate authorities.
@@ -383,12 +429,12 @@ codex plugin marketplace add /absolute/path/to/semwitness
 codex plugin add semwitness@semwitness-local --json
 ```
 
-The reviewed `v0.6.0-alpha.1` ref also includes Compact Response contract
-inspection, local rendering, exact verification, and replay. For a reproducible
-plugin install, pin that tag:
+The reviewed `v0.7.0-alpha.1` ref includes Compact Response contract inspection,
+local rendering, exact verification, replay, and the package-level AI SDK
+output adapter. For a reproducible plugin install, pin that tag:
 
 ```bash
-codex plugin marketplace add aantenore/semwitness --ref v0.6.0-alpha.1
+codex plugin marketplace add aantenore/semwitness --ref v0.7.0-alpha.1
 codex plugin add semwitness@semwitness-local --json
 ```
 
@@ -429,6 +475,14 @@ Installation snapshots the plugin directory. Rebuild and reinstall after local s
   are referenced by `SEMWITNESS_*` environment-variable name and never stored
   in compiler-binding JSON.
 - **Post-generation compression cannot reduce billed output tokens.** Once an LLM has generated a response, those output tokens already exist. Later compression can help storage, transport, or future-context reuse, but not the completed generation charge.
+- **The AI SDK output adapter is not a transparent response firewall.** It
+  validates and renders the value returned through `result.output`, but AI SDK
+  can separately retain the compact provider JSON in text/content, step,
+  response-message, callback, telemetry, and stream/pipe surfaces. Hosts must
+  use `requireCompactResponseOutput` and must not publish those raw values.
+  Provider schema enforcement remains capability-dependent; SemWitness rejects
+  compatibility warnings and always revalidates locally. Production savings
+  remain unclaimed until paired held-out evaluation passes.
 - **No universal semantic proof.** V0.1 relies on byte equality, reversible codecs, strict typed equivalence, protected anchors, and explicit bypasses. It does not certify arbitrary prose summaries.
 - **Token and cache estimates are conditional.** Counts depend on the selected tokenizer/model contract, and cache behavior belongs to the provider and host. Provider usage records remain authoritative.
 - **Structured metadata is still untrusted.** Reports exclude payload text, raw errors, and paths, but caller-selected ASCII identifiers can still resemble instructions. Consumers and the Codex skill must treat every metadata field as data, never as authority.

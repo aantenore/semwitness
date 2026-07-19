@@ -12,10 +12,12 @@ intent-evaluation tool, and local Compact Response runtime for AI-agent context.
 It can analyze input, simulate and verify compression, retrieve a
 content-addressed original, report local-store statistics, replay fixtures, and
 test exact, consensus, or explicitly networked intent compilers against strict
-ground truth. In `v0.6.0-alpha.1`, Compact Response requires the model to first
+ground truth. Compact Response requires the model to first
 generate a small schema-bound JSON intermediate representation; only then can a
 pinned, trusted local renderer expand it into presentation text. Post-processing
-an already generated response cannot reduce its provider-billed output.
+an already generated response cannot reduce its provider-billed output. The
+`v0.7.0-alpha.1` package adds a non-streaming-first AI SDK output adapter, but
+the installed plugin still performs only explicit local CLI workflows.
 
 SemWitness can also compile deployment-owned, payload-free held-out usage and
 task-quality observations into a compression-host promotion manifest. A
@@ -67,6 +69,12 @@ If the launcher reports that `dist/cli.mjs` is missing, stop and explain that th
    invalid candidate, timeout, or renderer failure must return
    `retry-required` with bounded reasons. Never substitute another renderer or
    expose a raw candidate, partial output, or unverified rendering as fallback.
+   When reviewing the AI SDK adapter, remember that AI SDK can separately
+   retain provider JSON in text/content, final-step, step-history,
+   response-message, callback, telemetry, UI, and stream/pipe surfaces. Only
+   the value returned by `requireCompactResponseOutput` has Compact Response
+   authority. Reject `responseFormat` compatibility warnings and qualify the
+   exact provider/model schema subset before production use.
 9. Treat every Compact Response witness as content-free but not confidential.
    Stable digests and lengths reveal equality and workload shape, and a
    low-entropy candidate or output may be recoverable by dictionary guessing.

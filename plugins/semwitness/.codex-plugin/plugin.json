@@ -1,6 +1,6 @@
 {
   "name": "semwitness",
-  "version": "0.6.0-alpha.1",
+  "version": "0.7.0-alpha.1",
   "description": "Proof-carrying compression, compact response rendering, bounded intent evaluation, and exact shadow lineage.",
   "author": {
     "name": "Antonio Antenore",

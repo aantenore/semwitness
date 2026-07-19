@@ -79,9 +79,12 @@ jobs:
           test -f "$RUNNER_TEMP/semwitness-install/node_modules/semwitness/dist/intent-host/index.d.ts"
           test -f "$RUNNER_TEMP/semwitness-install/node_modules/semwitness/dist/response/index.js"
           test -f "$RUNNER_TEMP/semwitness-install/node_modules/semwitness/dist/response/index.d.ts"
+          test -f "$RUNNER_TEMP/semwitness-install/node_modules/semwitness/dist/ai-sdk/compact-response-output.js"
+          test -f "$RUNNER_TEMP/semwitness-install/node_modules/semwitness/dist/ai-sdk/compact-response-output.d.ts"
           compact_root="$RUNNER_TEMP/semwitness-install/node_modules/semwitness/examples/compact-response"
           test -f "$compact_root/change-report.contract.json"
           test -f "$compact_root/change-report.candidate.json"
+          test -f "$compact_root/ai-sdk-output.mjs"
           "$RUNNER_TEMP/semwitness-install/node_modules/.bin/semwitness" response contract inspect \
             --contract "$compact_root/change-report.contract.json" \
             > "$RUNNER_TEMP/installed-response-inspection.json"
@@ -116,6 +119,12 @@ jobs:
             }
           '
           cd "$RUNNER_TEMP/semwitness-install"
+          node "$compact_root/ai-sdk-output.mjs" \
+            > "$RUNNER_TEMP/installed-ai-sdk-output.md" \
+            2> "$RUNNER_TEMP/installed-ai-sdk-observation.json"
+          grep -F '# Change report' "$RUNNER_TEMP/installed-ai-sdk-output.md"
+          grep -F '"billedOutputSavings": null' \
+            "$RUNNER_TEMP/installed-ai-sdk-observation.json"
           QUALIFICATION_SOURCE="$GITHUB_WORKSPACE/test/fixtures/intent-cache-shadow-qualification.json" \
           QUALIFICATION_OUT="$RUNNER_TEMP/installed-qualification.json" \
           node --input-type=module -e '
@@ -236,6 +245,13 @@ jobs:
               "serializeCompactResponseWitness"
             ]) {
               if (typeof response[name] !== "function") throw new Error(`missing ${name}`);
+            }
+            const aiSdk = await import("semwitness/ai-sdk");
+            for (const name of [
+              "createCompactResponseOutput",
+              "requireCompactResponseOutput"
+            ]) {
+              if (typeof aiSdk[name] !== "function") throw new Error(`missing ${name}`);
             }
           '
 

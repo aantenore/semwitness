@@ -87,7 +87,7 @@ import {
 } from './io.js';
 import { addCompactResponseCommands } from './response.js';
 
-const VERSION = '0.6.0-alpha.1';
+const VERSION = '0.7.0-alpha.1';
 const ERROR_SCHEMA = 'semwitness.dev/cli-error/v1alpha1';
 const MAX_INTENT_NORMALIZER_BYTES = 4 * 1024 * 1024;
 const MAX_INTENT_COMPILER_BINDING_BYTES = 64 * 1024;

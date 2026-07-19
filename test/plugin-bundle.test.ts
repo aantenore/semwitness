@@ -248,7 +248,7 @@ describe('bundled Codex plugin', () => {
 
     expect(result).toEqual({
       code: 0,
-      stdout: '0.6.0-alpha.1\n',
+      stdout: '0.7.0-alpha.1\n',
       stderr: '',
     });
   });
