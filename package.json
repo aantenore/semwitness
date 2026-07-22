@@ -1,6 +1,6 @@
 {
   "name": "semwitness",
-  "version": "0.7.0-alpha.1",
+  "version": "0.8.0-alpha.1",
   "description": "Proof-carrying context optimization, compact response rendering, and shadow intent-cache admission.",
   "type": "module",
   "license": "Apache-2.0",
@@ -35,6 +35,7 @@
     "examples/intent-normalizer.json",
     "examples/intent-normalizer-eval.jsonl",
     "examples/intent-compiler.openai-compatible.json",
+    "CHANGELOG.md",
     "README.md",
     "LICENSE"
   ],

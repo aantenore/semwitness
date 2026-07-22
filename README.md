@@ -461,12 +461,13 @@ codex plugin marketplace add /absolute/path/to/semwitness
 codex plugin add semwitness@semwitness-local --json
 ```
 
-The reviewed `v0.7.0-alpha.1` ref includes Compact Response contract inspection,
-local rendering, exact verification, replay, and the package-level AI SDK
-output adapter. For a reproducible plugin install, pin that tag:
+The reviewed `v0.8.0-alpha.1` ref includes Compact Response contract inspection,
+local rendering, exact verification, replay, resumable intent evaluation, a
+digest-bound OpenAI-compatible reasoning-effort policy, and the package-level
+AI SDK output adapter. For a reproducible plugin install, pin that tag:
 
 ```bash
-codex plugin marketplace add aantenore/semwitness --ref v0.7.0-alpha.1
+codex plugin marketplace add aantenore/semwitness --ref v0.8.0-alpha.1
 codex plugin add semwitness@semwitness-local --json
 ```
 

@@ -16,8 +16,10 @@ ground truth. Compact Response requires the model to first
 generate a small schema-bound JSON intermediate representation; only then can a
 pinned, trusted local renderer expand it into presentation text. Post-processing
 an already generated response cannot reduce its provider-billed output. The
-`v0.7.0-alpha.1` package adds a non-streaming-first AI SDK output adapter, but
-the installed plugin still performs only explicit local CLI workflows.
+`v0.8.0-alpha.1` adds resumable intent-evaluation checkpoints and a
+digest-bound OpenAI-compatible reasoning-effort policy alongside the
+non-streaming-first AI SDK output adapter. The installed plugin still performs
+only explicit local CLI workflows.
 
 SemWitness can also compile deployment-owned, payload-free held-out usage and
 task-quality observations into a compression-host promotion manifest. A

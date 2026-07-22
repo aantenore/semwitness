@@ -49,7 +49,7 @@ describe('package manifest', () => {
 
     expect(manifest).toMatchObject({
       name: 'semwitness',
-      version: '0.7.0-alpha.1',
+      version: '0.8.0-alpha.1',
     });
     expect(pluginManifest).toMatchObject({
       name: manifest.name,
@@ -66,6 +66,7 @@ describe('package manifest', () => {
     expect(manifest.files).toEqual(
       expect.arrayContaining([
         'dist',
+        'CHANGELOG.md',
         'examples/compact-response/ai-sdk-output.mjs',
         'examples/compact-response/change-report.candidate.json',
         'examples/compact-response/change-report.contract.json',
