@@ -97,7 +97,7 @@
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.7",
     "@ai-sdk/provider": "4.0.3",
-    "ai": "7.0.22",
+    "ai": "7.0.31",
     "commander": "15.0.0",
     "yaml": "2.9.0",
     "zod": "4.4.3"
