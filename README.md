@@ -628,9 +628,14 @@ The CLI computes selected cases × runs before constructing the compiler and
 rejects work beyond the budget. The adapter uses bounded transport, no redirects
 or retries, no tools, and no telemetry. Its digest-bound `maxPromptBytes` policy
 caps the combined system instructions, operation catalog, locale, and source
-text before credentials or network are touched. It sends source text to the
-configured provider and remains candidate generation—not semantic proof or
-cache authority.
+text before credentials or network are touched. An optional digest-bound
+`reasoningEffort` policy is forwarded as OpenAI-compatible `reasoning_effort`;
+the allowlist is `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. Omitting
+it preserves the provider default. Providers may support only a subset: the
+adapter never substitutes or downgrades the selected value, and a rejected
+request or returned reasoning side channel becomes a content-free bypass. It
+sends source text to the configured provider and remains candidate
+generation—not semantic proof or cache authority.
 
 For stricter candidate generation, `ConsensusIntentCompiler` composes two to
 eight distinct-manifest compilers sharing one ontology. Its `all-agree` policy

@@ -8,6 +8,7 @@ import {
   OPENAI_COMPATIBLE_INTENT_OUTPUT_SCHEMA_DIGEST,
   OPENAI_COMPATIBLE_INTENT_PROMPT_TEMPLATE_DIGEST,
   OPENAI_COMPATIBLE_INTENT_RUNTIME_VERSIONS,
+  OPENAI_COMPATIBLE_REASONING_EFFORTS,
   OpenAICompatibleIntentCompiler,
   OpenAICompatibleIntentCompilerConfigurationError,
   type OpenAICompatibleIntentCompilerConfig,
@@ -170,6 +171,13 @@ describe('OpenAICompatibleIntentCompiler', () => {
       openaiCompatible: manifest.dependencies['@ai-sdk/openai-compatible'],
       zod: manifest.dependencies.zod,
     });
+    expect(
+      compiler(mockFetch(async () => completion({}))).manifest.normalizer,
+    ).toMatchObject({
+      id: 'openai-compatible-intent-compiler',
+      version: '0.2.0',
+      artifactDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
+    });
   });
 
   it('sends one strict, bounded, catalog-first and source-last request', async () => {
@@ -211,6 +219,7 @@ describe('OpenAICompatibleIntentCompiler', () => {
       expect(body).not.toHaveProperty('tools');
       expect(body).not.toHaveProperty('tool_choice');
       expect(body).not.toHaveProperty('stream');
+      expect(body).not.toHaveProperty('reasoning_effort');
 
       const messages = body.messages as Array<{
         readonly role: string;
@@ -245,6 +254,52 @@ describe('OpenAICompatibleIntentCompiler', () => {
       ambiguous: false,
     });
     expect(upstream).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(OPENAI_COMPATIBLE_REASONING_EFFORTS)(
+    'passes the digest-bound %s reasoning effort through the compatible provider options',
+    async (reasoningEffort) => {
+      const base = config();
+      const upstream = mockFetch(async (_input, init) => {
+        expect(requestBody(init).reasoning_effort).toBe(reasoningEffort);
+        return completion({
+          noMatch: true,
+          operationId: '',
+          confidencePpm: 0,
+          ambiguous: false,
+        });
+      });
+      const normalizer = compiler(upstream, {
+        config: {
+          ...base,
+          policy: { ...base.policy, reasoningEffort },
+        },
+      });
+
+      await expect(compileWith(normalizer)).resolves.toEqual({
+        status: 'bypass',
+        reason: 'INTENT_NO_MATCH',
+      });
+      expect(upstream).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('rejects an unsupported reasoning effort before any provider request', () => {
+    const base = config();
+    const neverCalled = mockFetch(async () => completion({}));
+
+    expect(() =>
+      compiler(neverCalled, {
+        config: {
+          ...base,
+          policy: {
+            ...base.policy,
+            reasoningEffort: 'unbounded',
+          },
+        } as unknown as OpenAICompatibleIntentCompilerConfig,
+      }),
+    ).toThrow(OpenAICompatibleIntentCompilerConfigurationError);
+    expect(neverCalled).not.toHaveBeenCalled();
   });
 
   it('resolves only the trusted registry IntentIR and remains shadow-only', async () => {
@@ -674,6 +729,18 @@ describe('OpenAICompatibleIntentCompiler', () => {
         },
       },
     });
+    const noReasoning = compiler(noFetch, {
+      config: {
+        ...policySource,
+        policy: { ...policySource.policy, reasoningEffort: 'none' },
+      },
+    });
+    const lowReasoning = compiler(noFetch, {
+      config: {
+        ...policySource,
+        policy: { ...policySource.policy, reasoningEffort: 'low' },
+      },
+    });
     const baseRegistry = registryDocument();
     const changedRegistry: IntentOperationRegistryDocument = {
       ...baseRegistry,
@@ -717,6 +784,12 @@ describe('OpenAICompatibleIntentCompiler', () => {
     );
     expect(otherPolicy.manifest.normalizer.configDigest).not.toBe(
       first.manifest.normalizer.configDigest,
+    );
+    expect(noReasoning.manifest.normalizer.configDigest).not.toBe(
+      first.manifest.normalizer.configDigest,
+    );
+    expect(lowReasoning.manifest.normalizer.configDigest).not.toBe(
+      noReasoning.manifest.normalizer.configDigest,
     );
     expect(otherRegistry.manifest.normalizer.configDigest).not.toBe(
       first.manifest.normalizer.configDigest,

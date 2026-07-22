@@ -245,8 +245,12 @@ loopback HTTP, manual redirect rejection, deadline/abort propagation, and
 declared plus streamed response-size limits. A digest-bound `maxPromptBytes`
 policy also caps the combined system instructions, operation catalog, locale,
 and source text before credential resolution or network access. Provider
-refusal, warnings, extra content, unknown operations, or malformed output bypass
-without returning raw provider errors.
+refusal, warnings, extra content, returned reasoning, unknown operations, or
+malformed output bypass without returning raw provider errors. A host may also
+select the digest-bound OpenAI-compatible `reasoning_effort` through the strict
+optional `reasoningEffort` policy. Omission preserves the provider default;
+unsupported values are never substituted and provider rejection remains a
+content-free bypass.
 
 `ConsensusIntentCompiler`, exported from `semwitness/intent`, composes two to
 eight compilers that have distinct manifests and the exact same ontology. Its

@@ -35,15 +35,37 @@ export const OPENAI_COMPATIBLE_INTENT_OUTPUT_SCHEMA =
 export const OPENAI_COMPATIBLE_INTENT_CONFIG_SCHEMA =
   'semwitness.dev/openai-compatible-intent-config/v1' as const;
 
+export const OPENAI_COMPATIBLE_REASONING_EFFORTS = Object.freeze([
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+] as const);
+export type OpenAICompatibleReasoningEffort =
+  (typeof OPENAI_COMPATIBLE_REASONING_EFFORTS)[number];
+
+export function isOpenAICompatibleReasoningEffort(
+  input: unknown,
+): input is OpenAICompatibleReasoningEffort {
+  return (
+    typeof input === 'string' &&
+    OPENAI_COMPATIBLE_REASONING_EFFORTS.some(
+      (reasoningEffort) => reasoningEffort === input,
+    )
+  );
+}
+
 const COMPILER_ID = 'openai-compatible-intent-compiler';
-const COMPILER_VERSION = '0.1.0';
+const COMPILER_VERSION = '0.2.0';
 export const OPENAI_COMPATIBLE_INTENT_RUNTIME_VERSIONS = Object.freeze({
   ai: '7.0.22',
   openaiCompatible: '3.0.7',
   zod: '4.4.3',
 } as const);
 const COMPILER_ARTIFACT_DIGEST = sha256(
-  `semwitness.dev/openai-compatible-intent-compiler/v1\0ai:${OPENAI_COMPATIBLE_INTENT_RUNTIME_VERSIONS.ai}\0openai-compatible:${OPENAI_COMPATIBLE_INTENT_RUNTIME_VERSIONS.openaiCompatible}\0zod:${OPENAI_COMPATIBLE_INTENT_RUNTIME_VERSIONS.zod}`,
+  `semwitness.dev/openai-compatible-intent-compiler/v2\0ai:${OPENAI_COMPATIBLE_INTENT_RUNTIME_VERSIONS.ai}\0openai-compatible:${OPENAI_COMPATIBLE_INTENT_RUNTIME_VERSIONS.openaiCompatible}\0zod:${OPENAI_COMPATIBLE_INTENT_RUNTIME_VERSIONS.zod}`,
 );
 const CATALOG_SCHEMA =
   'semwitness.dev/openai-compatible-intent-catalog/v1' as const;
@@ -127,6 +149,7 @@ const configSchema = z
           .int()
           .min(1_024)
           .max(1024 * 1024),
+        reasoningEffort: z.enum(OPENAI_COMPATIBLE_REASONING_EFFORTS).optional(),
       })
       .strict(),
   })
@@ -144,6 +167,7 @@ export interface OpenAICompatibleIntentCompilerConfig {
     readonly maxResponseBytes: number;
     readonly maxOutputTokens: number;
     readonly maxPromptBytes: number;
+    readonly reasoningEffort?: OpenAICompatibleReasoningEffort;
   };
 }
 
@@ -258,7 +282,15 @@ export class OpenAICompatibleIntentCompiler
       this.#model = parsedConfig.provider.model;
       this.#providerName = parsedConfig.provider.name;
       this.#environmentRef = parsedConfig.provider.environmentRef;
-      this.#policy = Object.freeze({ ...parsedConfig.policy });
+      this.#policy = Object.freeze({
+        requestTimeoutMs: parsedConfig.policy.requestTimeoutMs,
+        maxResponseBytes: parsedConfig.policy.maxResponseBytes,
+        maxOutputTokens: parsedConfig.policy.maxOutputTokens,
+        maxPromptBytes: parsedConfig.policy.maxPromptBytes,
+        ...(parsedConfig.policy.reasoningEffort === undefined
+          ? {}
+          : { reasoningEffort: parsedConfig.policy.reasoningEffort }),
+      });
       this.#environment = options.environment ?? process.env;
       this.#fetch = boundedFetch;
       this.#catalogPrefix = catalogPrefix;
@@ -364,7 +396,12 @@ export class OpenAICompatibleIntentCompiler
           recordOutputs: false,
         },
         providerOptions: {
-          openaiCompatible: { strictJsonSchema: true },
+          openaiCompatible: {
+            strictJsonSchema: true,
+            ...(this.#policy.reasoningEffort === undefined
+              ? {}
+              : { reasoningEffort: this.#policy.reasoningEffort }),
+          },
         },
         ...(snapshot.signal === undefined
           ? {}

@@ -80,11 +80,18 @@ environment-variable name, bounded execution policy, registry, prompt/template,
 and strict output schema. Runtime execution uses temperature zero, zero retries,
 no tools, and telemetry disabled. Credentials are never accepted as config
 values: `environmentRef`, when present, must name a `SEMWITNESS_*` environment
-variable containing the credential. Transport permits HTTPS or loopback HTTP
-only, one configured origin and resolved `chat/completions` pathname, no
-query/hash/credentials or redirects, and bounded timeout plus declared/streamed
-response bytes. Refusal, warning, unexpected content, unknown operation,
-malformed output, timeout, or abort becomes a content-free compiler bypass.
+variable containing the credential. The optional policy field
+`reasoningEffort` accepts only `none`, `minimal`, `low`, `medium`, `high`, or
+`xhigh` and is forwarded as OpenAI-compatible `reasoning_effort`. Its exact
+value is part of `configDigest`; omission sends no field and preserves the
+provider default. A provider may support only a subset. SemWitness does not
+downgrade or substitute the configured value, and a rejected request or
+returned reasoning side channel fails closed. Transport permits HTTPS or
+loopback HTTP only, one configured origin and resolved `chat/completions`
+pathname, no query/hash/credentials or redirects, and bounded timeout plus
+declared/streamed response bytes. Refusal, warning, unexpected content, unknown
+operation, malformed output, timeout, or abort becomes a content-free compiler
+bypass.
 
 `ConsensusIntentCompiler`, exported from `semwitness/intent`, implements an
 `all-agree` policy over two to eight members with distinct manifests and the
@@ -248,7 +255,9 @@ Duplicate keys, unknown fields, embedded secret values, or unsupported adapters
 are rejected. `--compiler-config` without `--allow-network` and the inverse both
 exit 1. Before compiler construction, the CLI multiplies cases selected by
 `--split` by `--runs` and rejects totals above bounded `--max-requests` (default
-100). A runtime counter enforces the precomputed ceiling as defense in depth.
+100). The optional `config.policy.reasoningEffort` is subject to the same strict
+field and enum validation before network access. A runtime counter enforces the
+precomputed ceiling as defense in depth.
 
 Remote use sends fixture source text to the configured provider. It is
 appropriate only for approved data and endpoints; the report remains

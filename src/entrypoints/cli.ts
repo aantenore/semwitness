@@ -7,6 +7,7 @@ import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import { HeuristicTokenizer } from '../adapters/heuristic-tokenizer.js';
 import {
   OpenAICompatibleIntentCompiler,
+  isOpenAICompatibleReasoningEffort,
   type OpenAICompatibleIntentCompilerConfig,
 } from '../adapters/openai-compatible-intent-compiler.js';
 import { analyzeSegment } from '../application/analyze.js';
@@ -1026,13 +1027,18 @@ function parseIntentCompilerBinding(
     ['name', 'baseUrl', 'model'],
     ['environmentRef'],
   );
-  const policy = strictJsonObject(config?.policy, [
-    'requestTimeoutMs',
-    'maxResponseBytes',
-    'maxOutputTokens',
-    'maxPromptBytes',
-  ]);
+  const policy = strictJsonObject(
+    config?.policy,
+    [
+      'requestTimeoutMs',
+      'maxResponseBytes',
+      'maxOutputTokens',
+      'maxPromptBytes',
+    ],
+    ['reasoningEffort'],
+  );
   const environmentRef = provider?.environmentRef;
+  const reasoningEffort = policy?.reasoningEffort;
   if (
     provider === undefined ||
     policy === undefined ||
@@ -1049,7 +1055,9 @@ function parseIntentCompilerBinding(
     !integerWithin(policy.requestTimeoutMs, 1, 300_000) ||
     !integerWithin(policy.maxResponseBytes, 256, 8 * 1024 * 1024) ||
     !integerWithin(policy.maxOutputTokens, 16, 4_096) ||
-    !integerWithin(policy.maxPromptBytes, 1_024, 1024 * 1024)
+    !integerWithin(policy.maxPromptBytes, 1_024, 1024 * 1024) ||
+    (reasoningEffort !== undefined &&
+      !isOpenAICompatibleReasoningEffort(reasoningEffort))
   ) {
     throw malformedCompilerBinding();
   }
@@ -1065,6 +1073,7 @@ function parseIntentCompilerBinding(
       maxResponseBytes: policy.maxResponseBytes as number,
       maxOutputTokens: policy.maxOutputTokens as number,
       maxPromptBytes: policy.maxPromptBytes as number,
+      ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
     }),
   });
 }

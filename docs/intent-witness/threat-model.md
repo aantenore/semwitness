@@ -116,7 +116,10 @@ gate.
     disabled. Its digest-bound `maxPromptBytes` policy rejects an oversized
     operation catalog or combined prompt before credentials or network. The CLI
     refuses a missing/mismatched network opt-in or a selected cases × runs count
-    above budget before constructing the compiler.
+    above budget before constructing the compiler. Optional `reasoningEffort`
+    is allowlisted, forwarded without provider-specific fallback, and bound in
+    the same configuration digest; provider rejection or returned reasoning
+    fails closed.
 15. A checkpointed evaluator attempt is claimed before its compiler call and
     durably committed before the runner advances. A claim without a checkpoint
     is indeterminate and permanently fail-stops that run instead of being

@@ -56,7 +56,7 @@ async function invoke(...arguments_: readonly string[]): Promise<CliResult> {
   }
 }
 
-function compilerBinding(): Record<string, unknown> {
+function compilerBinding(reasoningEffort?: unknown): Record<string, unknown> {
   return {
     schema: 'semwitness.dev/intent-compiler-binding/v1',
     adapter: 'openai-compatible',
@@ -71,6 +71,7 @@ function compilerBinding(): Record<string, unknown> {
         maxResponseBytes: 4_096,
         maxOutputTokens: 64,
         maxPromptBytes: 16_384,
+        ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
       },
     },
   };
@@ -287,6 +288,47 @@ describe('CLI OpenAI-compatible intent compiler binding', () => {
     expect(result.stdout).not.toContain(fixture.privateObject);
   });
 
+  it('accepts and forwards an allowlisted reasoning effort', async () => {
+    const fixture = await createIntentCliFixture();
+    await writeFile(
+      fixture.compilerPath,
+      JSON.stringify(compilerBinding('none')),
+    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (_input, init) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        expect(body.reasoning_effort).toBe('none');
+        return Response.json({
+          choices: [
+            {
+              message: {
+                role: 'assistant',
+                content: JSON.stringify({
+                  noMatch: false,
+                  operationId: 'explain-runtime',
+                  confidencePpm: 975_000,
+                  ambiguous: false,
+                }),
+              },
+              finish_reason: 'stop',
+            },
+          ],
+        });
+      });
+
+    const result = await invoke(
+      ...networkArguments(fixture),
+      '--allow-network',
+      '--max-requests',
+      '2',
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
   it('rejects duplicate keys, unknown adapters and secret-valued fields without leakage', async () => {
     const fixture = await createIntentCliFixture();
     const fetchSpy = vi
@@ -311,6 +353,8 @@ describe('CLI OpenAI-compatible intent compiler binding', () => {
           },
         },
       }),
+      JSON.stringify(compilerBinding('unbounded')),
+      JSON.stringify(compilerBinding(null)),
     ];
 
     for (const binding of invalidBindings) {

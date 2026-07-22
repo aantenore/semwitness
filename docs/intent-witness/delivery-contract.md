@@ -101,6 +101,10 @@ Must:
 - Require a digest-bound `maxPromptBytes` policy that caps the combined system
   instructions, operation catalog, locale, and source text before credential
   resolution or network access.
+- Permit only the optional OpenAI-compatible `reasoningEffort` values `none`,
+  `minimal`, `low`, `medium`, `high`, and `xhigh`; digest-bind and forward the
+  exact value without substitution, preserving the provider default when absent
+  and bypassing on provider rejection or returned reasoning.
 - Treat the selected fixture source as explicit provider disclosure. Keep remote
   reports content-free; shadow mode still cannot authorize or serve a cache hit.
 - Require `--compiler-config` and `--allow-network` together in the CLI. Before
@@ -208,7 +212,7 @@ promotion of `observation` or `response`.
 | IW18 | Split-safe fixture        | Case families and explicit equivalent/distinct comparisons cannot cross splits or contradict canonical ground truth                                                                                                                                                                | Strict JSONL parser tests                          |
 | IW19 | Multi-dimensional report  | Evaluation reports exact accuracy, bypasses, unsafe accepts, repeatability, convergence, false merges, per-phenomenon rates, and statistical readiness separately                                                                                                                  | Evaluator and CLI snapshots                        |
 | IW20 | No live promotion         | Every normalizer report is content-free, sets `activeCacheQualified: false`, and exposes no CLI or SDK cache-value serving path                                                                                                                                                    | Privacy and public API tests                       |
-| IW21 | Remote compiler boundary  | The OpenAI-compatible adapter emits operation proposals only; the registry owns Intent IR/effect, all prompt/output/config bindings are digest-bound, and transport/retry/tool/telemetry restrictions fail closed                                                                  | Adapter and adversarial transport tests            |
+| IW21 | Remote compiler boundary  | The OpenAI-compatible adapter emits operation proposals only; the registry owns Intent IR/effect, all prompt/output/config bindings including optional reasoning effort are digest-bound, and transport/retry/tool/telemetry/reasoning restrictions fail closed                    | Adapter and adversarial transport tests            |
 | IW22 | Consensus fail-closed     | Two to eight distinct-manifest members with one ontology must all return the same valid unambiguous operation; every mixed, failed, bypassed, malformed, or aborted outcome bypasses                                                                                               | Consensus unit and mutation tests                  |
 | IW23 | Explicit network budget   | Network evaluation requires config plus opt-in, rejects unknown/secret-valued bindings, and checks selected cases × runs against the request budget before compiler construction                                                                                                   | CLI mocked-network tests                           |
 | IW24 | Curated corpus accounting | The checked-in corpus contains exactly 96 intent cases, 24 safety bypasses, 48 equivalent pairs, and 96 distinct pairs, while reports label all pair statistics non-IID                                                                                                            | Corpus invariant and report tests                  |
