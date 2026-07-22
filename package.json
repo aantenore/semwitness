@@ -95,7 +95,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "3.0.7",
+    "@ai-sdk/openai-compatible": "3.0.12",
     "@ai-sdk/provider": "4.0.3",
     "ai": "7.0.22",
     "commander": "15.0.0",
